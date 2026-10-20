@@ -1,9 +1,19 @@
 /**
- * Frani Mint — wallet, asset store, and marketplace (preview mode).
+ * Frani Mint — wallet session, asset store, and marketplace.
  *
- * Everything lives in localStorage, shaped like the Sphere SDK's model so a
- * real Unicity wallet-api connection can replace it without touching the UI.
+ * The wallet layer now delegates to the real Unicity Sphere SDK
+ * (src/lib/unicity-wallet.ts). A lightweight "guest" fallback exists for
+ * preview/demo use and is always labeled as such.
  */
+
+import {
+  connectUnicityWallet,
+  disconnectUnicityWallet,
+  loadUnicityWallet,
+  refreshUctBalance,
+  sendUct,
+  type UnicityWallet,
+} from "@/lib/unicity-wallet";
 
 export interface Nft {
   id: string;
@@ -12,7 +22,6 @@ export interface Nft {
   symbol: string;
   /** "generative" = auto art; "upload" = user image; "ai" = AI Horde image. */
   imageType: "generative" | "upload" | "ai";
-  /** Data URL for uploads; art seed for generative. */
   image?: string;
   artSeed?: number;
   mintedAt: string;
@@ -24,7 +33,7 @@ export interface Listing {
   id: string;
   nftId: string;
   seller: string;
-  price: string; // whole UCT, string to avoid float issues
+  price: string; // whole UCT
   listedAt: string;
   status: "active" | "sold" | "cancelled";
   buyer?: string;
@@ -35,8 +44,10 @@ export interface Wallet {
   address: string;
   nametag: string;
   connectedAt: string;
-  /** Simulated UCT balance (whole units) for marketplace purchases. */
   uctBalance: string;
+  kind: "unicity" | "guest";
+  /** Present only when this wallet was just created (show once). */
+  generatedMnemonic?: string;
 }
 
 const WALLET_KEY = "frani-mint:wallet";
@@ -70,38 +81,70 @@ function randomAddress(): string {
   return `0x${randomHex(40)}`;
 }
 
+function toSessionWallet(u: UnicityWallet): Wallet {
+  return {
+    address: u.address,
+    nametag: u.nametag,
+    connectedAt: new Date().toISOString(),
+    uctBalance: u.uctBalance,
+    kind: "unicity",
+  };
+}
+
 /* ------------------------------ wallet ------------------------------ */
 
-export function connectWallet(): Wallet {
-  const existing = read<Wallet | null>(WALLET_KEY, null);
-  if (existing) return existing;
+/** Connect a real Unicity wallet (create or restore). Throws on failure. */
+export async function connectWallet(input?: { mnemonic?: string }): Promise<Wallet> {
+  const u = await connectUnicityWallet(input);
+  const session = toSessionWallet(u);
+  if (u.generatedMnemonic) session.generatedMnemonic = u.generatedMnemonic;
+  write(WALLET_KEY, session);
+  return session;
+}
+
+/** Restore the persisted session (real wallet) without network init. */
+export function currentWallet(): Wallet | null {
+  return read<Wallet | null>(WALLET_KEY, null);
+}
+
+/** Load the real wallet from the SDK's storage (IndexedDB) if it exists. */
+export async function restoreWallet(): Promise<Wallet | null> {
+  const u = await loadUnicityWallet();
+  if (!u) return null;
+  const session = toSessionWallet(u);
+  write(WALLET_KEY, session);
+  return session;
+}
+
+/** Guest preview wallet (clearly labeled) — used when real connect fails/declined. */
+export function connectGuestWallet(): Wallet {
   const wallet: Wallet = {
     address: randomAddress(),
     nametag: `guest_${Math.floor(Math.random() * 900 + 100)}`,
     connectedAt: new Date().toISOString(),
     uctBalance: "1000",
+    kind: "guest",
   };
   write(WALLET_KEY, wallet);
   return wallet;
 }
 
-export function currentWallet(): Wallet | null {
-  return read<Wallet | null>(WALLET_KEY, null);
-}
-
-export function disconnectWallet() {
+export async function disconnectWallet() {
   try {
     window.localStorage.removeItem(WALLET_KEY);
   } catch {
     /* ignore */
   }
+  await disconnectUnicityWallet();
 }
 
-export function updateWalletBalance(address: string, delta: bigint) {
-  const wallet = currentWallet();
-  if (!wallet || wallet.address.toLowerCase() !== address.toLowerCase()) return;
-  wallet.uctBalance = (BigInt(wallet.uctBalance) + delta).toString();
-  write(WALLET_KEY, wallet);
+/** Refresh the real UCT balance and update the session. */
+export async function refreshBalance(wallet: Wallet): Promise<Wallet> {
+  if (wallet.kind !== "unicity") return wallet;
+  const balance = await refreshUctBalance();
+  const updated: Wallet = { ...wallet, uctBalance: balance };
+  write(WALLET_KEY, updated);
+  return updated;
 }
 
 /* ------------------------------ NFTs ------------------------------ */
@@ -195,26 +238,42 @@ export function cancelListing(listingId: string, by: string) {
   write(LISTINGS_KEY, listings);
 }
 
-export function buyNft(listingId: string, buyer: string): Listing {
+/**
+ * Buy an NFT. With a real Unicity wallet this performs a real UCT transfer to
+ * the seller's address; with a guest wallet it simulates the exchange.
+ */
+export async function buyNft(listingId: string, wallet: Wallet): Promise<Listing> {
   const listings = listListings();
   const listing = listings.find((l) => l.id === listingId);
   if (!listing) throw new Error("Listing not found");
   if (listing.status !== "active") throw new Error("Listing is not active");
-  if (listing.seller.toLowerCase() === buyer.toLowerCase()) throw new Error("You can't buy your own listing");
-  const wallet = currentWallet();
-  if (!wallet) throw new Error("Connect a wallet to buy");
-  const price = BigInt(listing.price);
-  if (BigInt(wallet.uctBalance) < price) {
-    throw new Error(`Insufficient UCT — you have ${wallet.uctBalance}, this costs ${listing.price}`);
+  if (listing.seller.toLowerCase() === wallet.address.toLowerCase()) {
+    throw new Error("You can't buy your own listing");
   }
-  // Simulated exchange: deduct UCT, transfer the NFT.
-  wallet.uctBalance = (BigInt(wallet.uctBalance) - price).toString();
-  write(WALLET_KEY, wallet);
-  transferNft(listing.nftId, buyer);
+
+  const price = BigInt(listing.price);
+  const balance = BigInt(wallet.uctBalance);
+  if (balance < price) {
+    throw new Error(
+      `Insufficient UCT — you have ${wallet.uctBalance}, this costs ${listing.price}`
+    );
+  }
+
+  if (wallet.kind === "unicity") {
+    // Real transfer to the seller's DIRECT address.
+    await sendUct(listing.seller, listing.price, `Frani Mint: ${getNft(listing.nftId)?.name ?? "NFT"}`);
+    const fresh = await refreshBalance(wallet);
+    wallet.uctBalance = fresh.uctBalance;
+  } else {
+    wallet.uctBalance = (balance - price).toString();
+  }
+
+  transferNft(listing.nftId, wallet.address);
   listing.status = "sold";
-  listing.buyer = buyer;
+  listing.buyer = wallet.address;
   listing.soldAt = new Date().toISOString();
   write(LISTINGS_KEY, listings);
+  write(WALLET_KEY, wallet);
   return listing;
 }
 

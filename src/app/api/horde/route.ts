@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
  * anonymous API key out of the client bundle and sidesteps CORS entirely.
  *
  *   POST /api/horde  { prompt, model }  ->  { id }
- *   GET  /api/horde?id=<id>             ->  { done, image?, waiting?, queue? }
+ *   GET  /api/horde?id=<id>             ->  { done, image?, waiting?, queue?, processing?, faulted?, expired?, message? }
  */
 
 const HORDE_API = "https://aihorde.net/api/v2";
@@ -93,6 +93,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Surface terminal failure states so the client can stop polling.
+    if (data.faulted) {
+      return NextResponse.json({
+        done: false,
+        faulted: true,
+        message: data.message || "Worker faulted",
+      });
+    }
+    if (data.expired) {
+      return NextResponse.json({ done: false, expired: true });
+    }
+
     if (data.done && Array.isArray(data.generations) && data.generations.length > 0) {
       const img = data.generations[0].img as string | undefined;
       if (img) {
@@ -105,6 +117,7 @@ export async function GET(req: NextRequest) {
       done: false,
       waiting: typeof data.waiting === "number" ? data.waiting : undefined,
       queue: typeof data.queue_position === "number" ? data.queue_position : undefined,
+      processing: data.processing === true,
     });
   } catch (err) {
     return NextResponse.json(

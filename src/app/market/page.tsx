@@ -20,7 +20,6 @@ import { EmptyState } from "@/components/empty-state";
 import {
   activeListings,
   buyNft,
-  connectWallet,
   currentWallet,
   getNft,
   type Listing,
@@ -52,12 +51,11 @@ export default function MarketPage() {
     });
   }, [query, buying]);
 
-  function handleBuy() {
-    if (!buying) return;
+  async function handleBuy() {
+    if (!buying || !wallet) return;
     setBusy(true);
     try {
-      const buyer = wallet?.address ?? connectWallet().address;
-      buyNft(buying.id, buyer);
+      await buyNft(buying.id, wallet);
       toast.success("Purchase complete — NFT transferred to your wallet");
       setBuying(null);
     } catch (e) {
@@ -169,6 +167,11 @@ export default function MarketPage() {
                     <span className="font-mono text-foreground">
                       {wallet?.uctBalance ?? "—"} UCT
                     </span>
+                    {wallet?.kind === "guest" ? (
+                      <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">
+                        guest
+                      </span>
+                    ) : null}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     The NFT transfers to your wallet instantly.

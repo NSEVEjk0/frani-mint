@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/empty-state";
 import {
-  connectWallet,
+  connectGuestWallet,
   currentWallet,
   listNfts,
   listNftForSale,
@@ -89,7 +89,7 @@ export default function StudioPage() {
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
               You need a wallet to mint and hold NFTs. Connecting takes one click.
             </p>
-            <Button className="mt-6" onClick={() => setWallet(connectWallet())}>
+            <Button className="mt-6" onClick={() => setWallet(connectGuestWallet())}>
               Connect wallet
             </Button>
           </div>
