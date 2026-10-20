@@ -18,10 +18,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
+import { NftDetailDialog } from "@/components/nft-detail-dialog";
 import {
   buyNft,
   currentWallet,
   fetchListings,
+  type Nft,
   type SharedListing,
   type Wallet,
 } from "@/lib/wallet";
@@ -35,6 +37,7 @@ export default function MarketPage() {
   const [listings, setListings] = useState<SharedListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [detailNft, setDetailNft] = useState<Nft | null>(null);
 
   useEffect(() => {
     setWallet(currentWallet());
@@ -143,7 +146,22 @@ export default function MarketPage() {
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((listing) => (
-              <div key={listing.id} className="card-glow overflow-hidden rounded-xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_60px_-20px_hsl(var(--primary)/0.35)]">
+              <div
+                key={listing.id}
+                className="card-glow cursor-pointer overflow-hidden rounded-xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_60px_-20px_hsl(var(--primary)/0.35)]"
+                onClick={() => setDetailNft({
+                  id: listing.nftId,
+                  name: listing.nft.name,
+                  description: listing.nft.description,
+                  symbol: listing.nft.symbol,
+                  imageType: listing.nft.imageType as "generative" | "upload" | "ai",
+                  image: listing.nft.image,
+                  artSeed: listing.nft.artSeed,
+                  mintedAt: listing.listedAt,
+                  owner: listing.seller,
+                  txRef: "",
+                })}
+              >
                 <div className="aspect-square overflow-hidden">
                   <NftMedia nft={{ id: listing.nftId, name: listing.nft.name, description: listing.nft.description, symbol: listing.nft.symbol, imageType: listing.nft.imageType as "generative" | "upload" | "ai", image: listing.nft.image, artSeed: listing.nft.artSeed, mintedAt: "", owner: "", txRef: "" }} />
                 </div>
@@ -166,7 +184,7 @@ export default function MarketPage() {
                     <span className="text-[11px] text-muted-foreground">
                       by <span className="font-mono">{listing.seller.slice(0, 8)}…</span>
                     </span>
-                    <Button size="sm" onClick={() => { setSold(false); setBuying(listing); }}>
+                    <Button size="sm" onClick={(e) => { e.stopPropagation(); setSold(false); setBuying(listing); }}>
                       Buy <ArrowRight className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -176,6 +194,12 @@ export default function MarketPage() {
           </div>
         )}
       </main>
+
+      <NftDetailDialog
+        nft={detailNft}
+        open={!!detailNft}
+        onOpenChange={(o) => { if (!o) setDetailNft(null); }}
+      />
 
       <Dialog open={!!buying} onOpenChange={(o) => { if (!o) { setBuying(null); setSold(false); } }}>
         <DialogContent className="max-w-md">

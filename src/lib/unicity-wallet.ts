@@ -1,31 +1,47 @@
 "use client";
 
 /**
- * Real Unicity wallet connection via the Sphere SDK (browser build).
+ * Unicity wallet — local, self-custodial.
  *
- * - `connectUnicityWallet()` — create a new wallet (auto-generates a
- *   mnemonic) or restore one from a mnemonic.
- * - The wallet persists in IndexedDB (provided by the SDK), so returning
- *   visitors load it automatically.
- * - Balances are read from the wallet-api inventory mirror (real UCT).
- * - `sendUct()` performs a real UCT transfer to a DIRECT address or nametag.
+ * Identity is derived entirely in the browser from a BIP-39 mnemonic using
+ * the Sphere SDK's pure primitives (generateMnemonic / identityFromMnemonicSync
+ * / deriveAddressInfo). This always works — no network, no wallet-api session,
+ * no fragile init required to connect.
+ *
+ * Balance and sending are best-effort: we attempt a full Sphere SDK session
+ * (wallet-api + nostr) so we can read real UCT and send it. If the network
+ * path is unavailable, the wallet still connects and shows its address; the
+ * UI degrades gracefully (balance shown as "—", purchases disabled with a
+ * clear message).
  */
 
-import { Sphere, TokenRegistry, getCoinIdBySymbol } from "@unicitylabs/sphere-sdk";
+import {
+  generateMnemonic,
+  identityFromMnemonicSync,
+  deriveAddressInfo,
+  getAddressId,
+  Sphere,
+  TokenRegistry,
+  getCoinIdBySymbol,
+} from "@unicitylabs/sphere-sdk";
 import { createBrowserProviders, createWalletApiProviders } from "@unicitylabs/sphere-sdk/impl/browser";
 
 export interface UnicityWallet {
-  address: string;
+  address: string; // DIRECT://...
+  addressId: string;
   nametag: string;
-  uctBalance: string; // whole UCT units (string to avoid float drift)
+  uctBalance: string | null; // null = network sync unavailable
   created: boolean;
-  generatedMnemonic?: string; // present only when newly created
+  generatedMnemonic?: string;
 }
 
 const NETWORK = "testnet2";
 const WALLET_API_URL = "https://wallet-api.unicity.network";
 const DEVICE_ID = "frani-mint-browser-v1";
 const UCT_DECIMALS = 18;
+const BASE_PATH = "m/44'/0'/0'";
+
+const MNEMONIC_KEY = "frani-mint:mnemonic";
 
 let sphere: Sphere | null = null;
 
@@ -37,6 +53,47 @@ function wholeFromBase(base: string, decimals: number): string {
   return frac ? `${whole}.${frac}` : whole.toString();
 }
 
+/** Derive the DIRECT address from a mnemonic — pure, local, synchronous. */
+export function addressFromMnemonic(mnemonic: string): { address: string; addressId: string } {
+  const mk = identityFromMnemonicSync(mnemonic.trim());
+  const info = deriveAddressInfo(mk, BASE_PATH, 0, false);
+  const address = `DIRECT://${info.publicKey}` as const;
+  return { address, addressId: getAddressId(address) };
+}
+
+export function isValidMnemonic(phrase: string): boolean {
+  const words = phrase.trim().split(/\s+/);
+  return words.length === 12 || words.length === 24;
+}
+
+export function generateFreshMnemonic(): string {
+  return generateMnemonic(128);
+}
+
+function readStoredMnemonic(): string | null {
+  try {
+    return window.localStorage.getItem(MNEMONIC_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeMnemonic(phrase: string) {
+  try {
+    window.localStorage.setItem(MNEMONIC_KEY, phrase);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearStoredMnemonic() {
+  try {
+    window.localStorage.removeItem(MNEMONIC_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 async function readUctBalance(s: Sphere): Promise<string> {
   const coinId = getCoinIdBySymbol("UCT");
   if (!coinId) return "0";
@@ -45,7 +102,6 @@ async function readUctBalance(s: Sphere): Promise<string> {
     const confirmed = assets[0]?.confirmedAmount ?? "0";
     return wholeFromBase(confirmed, UCT_DECIMALS);
   } catch {
-    // Inventory mirror not synced yet — treat as zero, caller can refresh.
     return "0";
   }
 }
@@ -59,66 +115,85 @@ function buildProviders() {
   });
 }
 
-export async function connectUnicityWallet(input?: {
-  mnemonic?: string;
-}): Promise<UnicityWallet> {
-  const providers = buildProviders();
-  await TokenRegistry.waitForReady().catch(() => {});
-  const result = await Sphere.init({
-    ...providers,
-    network: NETWORK,
-    autoGenerate: !input?.mnemonic,
-    ...(input?.mnemonic ? { mnemonic: input.mnemonic.trim() } : {}),
-  });
-  sphere = result.sphere;
-
-  const addresses = sphere.getActiveAddresses();
-  const addr = addresses[0];
-  if (!addr) throw new Error("Could not resolve a wallet address");
-
-  const uctBalance = await readUctBalance(sphere);
-
-  return {
-    address: addr.directAddress,
-    nametag: addr.nametag || `wallet_${addr.directAddress.slice(-6)}`,
-    uctBalance,
-    created: result.created,
-    generatedMnemonic: result.generatedMnemonic,
-  };
-}
-
-/** Load the persisted wallet (if any) without creating a new one. */
-export async function loadUnicityWallet(): Promise<UnicityWallet | null> {
+/** Try to open a full SDK session for the mnemonic. Returns null on failure. */
+async function tryOpenSession(mnemonic: string): Promise<Sphere | null> {
   try {
     const providers = buildProviders();
     await TokenRegistry.waitForReady().catch(() => {});
     const result = await Sphere.init({
       ...providers,
       network: NETWORK,
+      mnemonic: mnemonic.trim(),
       autoGenerate: false,
     });
-    sphere = result.sphere;
-    const addresses = sphere.getActiveAddresses();
-    const addr = addresses[0];
-    if (!addr) {
-      await sphere.destroy();
-      sphere = null;
-      return null;
-    }
-    const uctBalance = await readUctBalance(sphere);
-    return {
-      address: addr.directAddress,
-      nametag: addr.nametag || `wallet_${addr.directAddress.slice(-6)}`,
-      uctBalance,
-      created: false,
-    };
+    return result.sphere;
   } catch {
     return null;
   }
 }
 
+/**
+ * Connect a wallet. With no input, generates a fresh mnemonic. Always
+ * succeeds locally; network sync is attempted in the background.
+ */
+export async function connectUnicityWallet(input?: {
+  mnemonic?: string;
+}): Promise<UnicityWallet> {
+  const mnemonic = input?.mnemonic?.trim() || generateFreshMnemonic();
+  if (!isValidMnemonic(mnemonic)) {
+    throw new Error("That recovery phrase isn't valid. Check the words and their order.");
+  }
+  const { address, addressId } = addressFromMnemonic(mnemonic);
+  storeMnemonic(mnemonic);
+
+  // Best-effort network sync for balance.
+  let uctBalance: string | null = null;
+  sphere = await tryOpenSession(mnemonic);
+  if (sphere) {
+    try {
+      uctBalance = await readUctBalance(sphere);
+    } catch {
+      uctBalance = null;
+    }
+  }
+
+  return {
+    address,
+    addressId,
+    nametag: `wallet_${address.slice(-6)}`,
+    uctBalance,
+    created: !input?.mnemonic,
+    generatedMnemonic: !input?.mnemonic ? mnemonic : undefined,
+  };
+}
+
+/** Restore the persisted wallet, if any. */
+export async function loadUnicityWallet(): Promise<UnicityWallet | null> {
+  const mnemonic = readStoredMnemonic();
+  if (!mnemonic || !isValidMnemonic(mnemonic)) return null;
+  const { address, addressId } = addressFromMnemonic(mnemonic);
+
+  let uctBalance: string | null = null;
+  sphere = await tryOpenSession(mnemonic);
+  if (sphere) {
+    try {
+      uctBalance = await readUctBalance(sphere);
+    } catch {
+      uctBalance = null;
+    }
+  }
+
+  return {
+    address,
+    addressId,
+    nametag: `wallet_${address.slice(-6)}`,
+    uctBalance,
+    created: false,
+  };
+}
+
 export async function refreshUctBalance(): Promise<string> {
-  if (!sphere) throw new Error("Wallet not connected");
+  if (!sphere) throw new Error("Wallet not connected to the network");
   return readUctBalance(sphere);
 }
 
@@ -128,7 +203,7 @@ export async function sendUct(
   amountWhole: string,
   memo?: string
 ): Promise<void> {
-  if (!sphere) throw new Error("Wallet not connected");
+  if (!sphere) throw new Error("Wallet is offline — cannot send right now");
   const coinId = getCoinIdBySymbol("UCT");
   if (!coinId) throw new Error("UCT not found in the token registry");
   await sphere.payments.send({ recipient: to, amount: amountWhole, coinId, memo });
@@ -141,6 +216,7 @@ export async function disconnectUnicityWallet(): Promise<void> {
     /* ignore */
   }
   sphere = null;
+  clearStoredMnemonic();
   try {
     TokenRegistry.destroy();
   } catch {

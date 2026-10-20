@@ -7,6 +7,7 @@ import { Header } from "@/components/header";
 import { BackButton } from "@/components/back-button";
 import { MintWizard } from "@/components/mint-wizard";
 import { NftCard, NftMedia } from "@/components/nft-card";
+import { NftDetailDialog } from "@/components/nft-detail-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +38,7 @@ export default function StudioPage() {
   const [mintOpen, setMintOpen] = useState(false);
   const [listingNft, setListingNft] = useState<Nft | null>(null);
   const [price, setPrice] = useState("");
+  const [detailNft, setDetailNft] = useState<Nft | null>(null);
 
   useEffect(() => {
     setWallet(currentWallet());
@@ -116,15 +118,20 @@ export default function StudioPage() {
               ) : (
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {owned.map((nft) => (
-                    <NftCard
-                      key={nft.id}
-                      nft={nft}
-                      action={
-                        <Button variant="outline" size="sm" onClick={() => setListingNft(nft)}>
-                          List
-                        </Button>
-                      }
-                    />
+                    <div key={nft.id} className="cursor-pointer" onClick={() => setDetailNft(nft)}>
+                      <NftCard
+                        nft={nft}
+                        action={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); setListingNft(nft); }}
+                          >
+                            List
+                          </Button>
+                        }
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -148,6 +155,13 @@ export default function StudioPage() {
           <MintWizard owner={wallet?.address ?? ""} onMinted={handleMinted} />
         </DialogContent>
       </Dialog>
+
+      <NftDetailDialog
+        nft={detailNft}
+        open={!!detailNft}
+        onOpenChange={(o) => { if (!o) setDetailNft(null); }}
+        onList={(nft) => { setDetailNft(null); setListingNft(nft); }}
+      />
 
       <Dialog open={!!listingNft} onOpenChange={(o) => { if (!o) setListingNft(null); }}>
         <DialogContent className="max-w-md">

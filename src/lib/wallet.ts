@@ -44,7 +44,8 @@ export interface Wallet {
   address: string;
   nametag: string;
   connectedAt: string;
-  uctBalance: string;
+  /** null = network sync unavailable (wallet connected, balance unknown). */
+  uctBalance: string | null;
   kind: "unicity" | "guest";
   /** Present only when this wallet was just created (show once). */
   generatedMnemonic?: string;
@@ -141,10 +142,14 @@ export async function disconnectWallet() {
 /** Refresh the real UCT balance and update the session. */
 export async function refreshBalance(wallet: Wallet): Promise<Wallet> {
   if (wallet.kind !== "unicity") return wallet;
-  const balance = await refreshUctBalance();
-  const updated: Wallet = { ...wallet, uctBalance: balance };
-  write(WALLET_KEY, updated);
-  return updated;
+  try {
+    const balance = await refreshUctBalance();
+    const updated: Wallet = { ...wallet, uctBalance: balance };
+    write(WALLET_KEY, updated);
+    return updated;
+  } catch {
+    return wallet;
+  }
 }
 
 /* ------------------------------ NFTs ------------------------------ */
@@ -310,8 +315,12 @@ export async function buyNft(listingId: string, wallet: Wallet): Promise<SharedL
     throw new Error("You can't buy your own listing");
   }
 
+  if (wallet.kind === "unicity" && wallet.uctBalance === null) {
+    throw new Error("Your wallet is offline — balance unavailable. Please try again later.");
+  }
+
   const price = BigInt(listing.price);
-  const balance = BigInt(wallet.uctBalance);
+  const balance = BigInt(wallet.uctBalance ?? "0");
   if (balance < price) {
     throw new Error(
       `Insufficient UCT — you have ${wallet.uctBalance}, this costs ${listing.price}`

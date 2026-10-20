@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { NftArt } from "@/components/nft-art";
 import { MintMark } from "@/components/logo";
+import { FreshMints } from "@/components/fresh-mints";
 
 const FEATURES = [
   {
@@ -134,6 +135,9 @@ export default function Home() {
             ))}
           </div>
         </section>
+
+        {/* ── Fresh on the market (live) ── */}
+        <FreshMints />
 
         {/* ── How it works ── */}
         <section className="border-t border-border/60">

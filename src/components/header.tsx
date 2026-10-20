@@ -103,7 +103,11 @@ export function Header() {
     try {
       const updated = await refreshBalance(wallet);
       setWallet(updated);
-      toast.success(`Balance refreshed: ${updated.uctBalance} UCT`);
+      if (updated.uctBalance === null) {
+        toast.error("Still offline — balance unavailable");
+      } else {
+        toast.success(`Balance refreshed: ${updated.uctBalance} UCT`);
+      }
     } catch {
       toast.error("Could not refresh balance");
     }
@@ -145,7 +149,7 @@ export function Header() {
                   </Avatar>
                   <span className="max-w-[90px] truncate text-xs font-medium">{wallet.nametag}</span>
                   <span className="hidden text-xs text-muted-foreground sm:inline">
-                    {wallet.uctBalance} UCT
+                    {wallet.uctBalance ?? "—"} UCT
                   </span>
                   {wallet.kind === "guest" ? (
                     <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">
