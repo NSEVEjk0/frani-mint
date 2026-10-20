@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ArrowRight, Gem, Search } from "lucide-react";
 import { Header } from "@/components/header";
+import { BackButton } from "@/components/back-button";
 import { NftCard, NftMedia } from "@/components/nft-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +71,9 @@ export default function MarketPage() {
     <>
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <div className="mb-2">
+          <BackButton label="Back to home" />
+        </div>
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-semibold tracking-tight">Marketplace</h1>
