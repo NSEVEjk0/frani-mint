@@ -1,25 +1,25 @@
 import type { Metadata } from "next";
-import { Orbitron, Exo_2 } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
+import { Toaster } from "sonner";
+import { AmbientBackground } from "@/components/ambient-background";
 import "./globals.css";
 
-const orbitron = Orbitron({
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-orbitron",
+  variable: "--font-inter",
   display: "swap",
 });
 
-const exo = Exo_2({
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-exo",
+  variable: "--font-space-grotesk",
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Frani Mint — NFTs on Unicity",
   description:
-    "Mint and collect NFTs on Unicity testnet2. A mint studio for the Digital Republic.",
+    "Mint, collect, and trade NFTs on Unicity testnet2. A mint studio for the Digital Republic.",
 };
 
 export default function RootLayout({
@@ -28,8 +28,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${orbitron.variable} ${exo.variable}`}>
-      <body>{children}</body>
+    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable}`}>
+      <body className="min-h-screen font-sans">
+        <AmbientBackground />
+        <div className="relative z-10">{children}</div>
+        <Toaster position="bottom-right" theme="dark" toastOptions={{ style: { background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", color: "hsl(var(--foreground))" } }} />
+      </body>
     </html>
   );
 }

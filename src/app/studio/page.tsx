@@ -1,319 +1,241 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Header } from "@/components/Header";
-import { NftArt } from "@/components/NftArt";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { LayoutGrid, Plus, ShoppingBag } from "lucide-react";
+import { Header } from "@/components/header";
+import { MintWizard } from "@/components/mint-wizard";
+import { NftCard } from "@/components/nft-card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/empty-state";
 import {
   connectWallet,
   currentWallet,
   listNfts,
-  mintNft,
-  disconnectWallet,
+  listNftForSale,
+  myListings,
+  cancelListing,
   type Nft,
+  type Wallet,
 } from "@/lib/wallet";
 
 export default function StudioPage() {
-  const [wallet, setWallet] = useState(() => currentWallet());
-  const [nfts, setNfts] = useState<Nft[]>(() => listNfts());
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [symbol, setSymbol] = useState("");
-  const [status, setStatus] = useState<"idle" | "minting" | "done" | "error">("idle");
-  const [error, setError] = useState("");
-  const [minted, setMinted] = useState<Nft | null>(null);
-  const [tab, setTab] = useState<"mint" | "collection">("mint");
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [nfts, setNfts] = useState<Nft[]>([]);
+  const [mintOpen, setMintOpen] = useState(false);
+  const [listingNft, setListingNft] = useState<Nft | null>(null);
+  const [price, setPrice] = useState("");
 
-  const collection = useMemo(
-    () => [...nfts].sort((a, b) => (a.mintedAt < b.mintedAt ? 1 : -1)),
-    [nfts]
+  useEffect(() => {
+    setWallet(currentWallet());
+    setNfts(listNfts());
+  }, []);
+
+  const owned = useMemo(
+    () => nfts.filter((n) => wallet && n.owner.toLowerCase() === wallet.address.toLowerCase()),
+    [nfts, wallet]
   );
 
-  function handleConnect() {
-    setWallet(connectWallet());
+  function handleMinted(nft: Nft) {
+    setNfts((prev) => [nft, ...prev]);
+    setMintOpen(false);
   }
 
-  function handleDisconnect() {
-    disconnectWallet();
-    setWallet(null);
-  }
-
-  function handleMint(e: React.FormEvent) {
-    e.preventDefault();
-    if (!wallet) return;
-    if (!name.trim()) {
-      setStatus("error");
-      setError("Give your NFT a name.");
-      return;
+  function handleList() {
+    if (!wallet || !listingNft) return;
+    try {
+      listNftForSale(listingNft.id, wallet.address, price);
+      toast.success("Listed for sale in the marketplace");
+      setListingNft(null);
+      setPrice("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not list");
     }
-    setStatus("minting");
-    setError("");
-    // Simulate a short chain round-trip for the mint.
-    window.setTimeout(() => {
-      const nft = mintNft({
-        name: name.trim(),
-        description: description.trim() || "Minted on Frani Mint.",
-        symbol: symbol.trim() || "UCT-NFT",
-        owner: wallet.address,
-      });
-      setNfts((prev) => [nft, ...prev]);
-      setMinted(nft);
-      setStatus("done");
-      setName("");
-      setDescription("");
-      setSymbol("");
-    }, 900);
   }
 
   return (
     <>
       <Header />
-      <main style={{ maxWidth: 1120, margin: "0 auto", padding: "48px 24px 96px" }}>
-        {/* Wallet bar */}
-        <div
-          className="card"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-            padding: "16px 20px",
-            marginBottom: 28,
-            flexWrap: "wrap",
-          }}
-        >
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div style={{ fontSize: "0.72rem", color: "var(--muted-fg)", marginBottom: 4 }}>
-              WALLET
-            </div>
-            {wallet ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span
-                  aria-hidden="true"
-                  style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--pos)" }}
-                />
-                <span style={{ fontWeight: 600 }}>{wallet.nametag}</span>
-                <span
-                  style={{
-                    fontFamily: "ui-monospace, monospace",
-                    fontSize: "0.78rem",
-                    color: "var(--muted-fg)",
-                  }}
-                >
-                  {wallet.address.slice(0, 10)}…{wallet.address.slice(-6)}
-                </span>
-              </div>
-            ) : (
-              <span style={{ color: "var(--muted-fg)" }}>Not connected</span>
-            )}
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Studio</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Mint, collect, and manage your NFTs.
+            </p>
           </div>
-          {wallet ? (
-            <button className="btn btn-ghost btn-sm" onClick={handleDisconnect}>
-              Disconnect
-            </button>
-          ) : (
-            <button className="btn btn-primary btn-sm" onClick={handleConnect}>
+          <Button onClick={() => setMintOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" /> Mint new NFT
+          </Button>
+        </div>
+
+        {!wallet ? (
+          <div className="rounded-xl border border-dashed p-16 text-center">
+            <h2 className="font-display text-lg font-semibold">Connect your wallet</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+              You need a wallet to mint and hold NFTs. Connecting takes one click.
+            </p>
+            <Button className="mt-6" onClick={() => setWallet(connectWallet())}>
               Connect wallet
-            </button>
-          )}
-        </div>
-
-        {/* Tabs */}
-        <div role="tablist" aria-label="Studio" style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-          {(
-            [
-              ["mint", "Mint"],
-              ["collection", `Collection (${collection.length})`],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={tab === key}
-              onClick={() => setTab(key)}
-              className="btn btn-sm"
-              style={{
-                background: tab === key ? "var(--primary)" : "transparent",
-                color: tab === key ? "var(--on-primary)" : "var(--muted-fg)",
-                borderColor: tab === key ? "var(--primary)" : "var(--border)",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {tab === "mint" ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
-            {/* Mint form */}
-            <form className="card" onSubmit={handleMint} style={{ padding: 28 }}>
-              <h2 style={{ fontSize: "1.3rem", margin: "0 0 20px" }}>Mint a new NFT</h2>
-
-              <label style={{ display: "block", marginBottom: 6, fontSize: "0.9rem", fontWeight: 600 }}>
-                Name
-              </label>
-              <input
-                className="field"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Genesis Badge"
-                style={{ marginBottom: 16 }}
-                aria-label="NFT name"
-              />
-
-              <label style={{ display: "block", marginBottom: 6, fontSize: "0.9rem", fontWeight: 600 }}>
-                Description
-              </label>
-              <textarea
-                className="field"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What is this token?"
-                rows={4}
-                style={{ marginBottom: 16, resize: "vertical" }}
-                aria-label="NFT description"
-              />
-
-              <label style={{ display: "block", marginBottom: 6, fontSize: "0.9rem", fontWeight: 600 }}>
-                Symbol
-              </label>
-              <input
-                className="field"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                placeholder="UCT-NFT"
-                style={{ marginBottom: 24 }}
-                aria-label="NFT symbol"
-              />
-
-              <button
-                type="submit"
-                className="btn btn-primary"
-                style={{ width: "100%", padding: "14px 20px" }}
-                disabled={!wallet || status === "minting"}
-              >
-                {!wallet
-                  ? "Connect a wallet to mint"
-                  : status === "minting"
-                  ? "Minting on Unicity…"
-                  : "Mint NFT"}
-              </button>
-
-              {!wallet ? (
-                <p style={{ margin: "12px 0 0", fontSize: "0.85rem", color: "var(--muted-fg)", textAlign: "center" }}>
-                  <button
-                    type="button"
-                    onClick={handleConnect}
-                    style={{ color: "var(--primary)", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}
-                  >
-                    Connect wallet
-                  </button>{" "}
-                  to get started.
-                </p>
-              ) : null}
-
-              {status === "error" && error ? (
-                <p style={{ color: "var(--neg)", fontSize: "0.88rem", margin: "12px 0 0" }}>{error}</p>
-              ) : null}
-            </form>
-
-            {/* Preview / result */}
-            <div>
-              {status === "done" && minted ? (
-                <div className="card" style={{ padding: 24, textAlign: "center" }}>
-                  <div style={{ fontSize: "0.78rem", color: "var(--pos)", fontWeight: 700, marginBottom: 12 }}>
-                    ✓ Minted on Unicity
-                  </div>
-                  <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "1 / 1", marginBottom: 16 }}>
-                    <NftArt seed={minted.artSeed} />
-                  </div>
-                  <h3 style={{ margin: "0 0 4px", fontSize: "1.1rem" }}>{minted.name}</h3>
-                  <p style={{ margin: "0 0 12px", color: "var(--muted-fg)", fontSize: "0.9rem" }}>
-                    {minted.symbol} · {minted.description}
-                  </p>
-                  <div
-                    style={{
-                      fontFamily: "ui-monospace, monospace",
-                      fontSize: "0.72rem",
-                      color: "var(--muted-fg)",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    tx {minted.txRef.slice(0, 18)}…{minted.txRef.slice(-6)}
-                  </div>
-                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 16 }} onClick={() => setTab("collection")}>
-                    View in collection →
-                  </button>
-                </div>
-              ) : (
-                <div className="card" style={{ padding: 24, textAlign: "center" }}>
-                  <div style={{ fontSize: "0.78rem", color: "var(--muted-fg)", marginBottom: 12 }}>
-                    PREVIEW
-                  </div>
-                  <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "1 / 1", marginBottom: 16 }}>
-                    <NftArt seed={name ? name.length * 7919 + 7 : 42} />
-                  </div>
-                  <h3 style={{ margin: "0 0 4px", fontSize: "1.05rem" }}>
-                    {name.trim() || "Your NFT preview"}
-                  </h3>
-                  <p style={{ margin: 0, color: "var(--muted-fg)", fontSize: "0.9rem" }}>
-                    {description.trim() || "Art is generated from your metadata."}
-                  </p>
-                </div>
-              )}
-            </div>
+            </Button>
           </div>
         ) : (
-          /* Collection */
-          <div>
-            {collection.length === 0 ? (
-              <div className="card" style={{ padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }} aria-hidden="true">◇</div>
-                <h2 style={{ fontSize: "1.2rem", margin: "0 0 8px" }}>No NFTs yet</h2>
-                <p style={{ color: "var(--muted-fg)", margin: "0 0 20px" }}>
-                  Mint your first collectible to see it here.
-                </p>
-                <button className="btn btn-primary" onClick={() => setTab("mint")}>
-                  Mint your first NFT
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 20 }}>
-                {collection.map((nft) => (
-                  <article key={nft.id} className="card" style={{ overflow: "hidden" }}>
-                    <div style={{ aspectRatio: "1 / 1" }}>
-                      <NftArt seed={nft.artSeed} />
-                    </div>
-                    <div style={{ padding: 18 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <h3 style={{ margin: 0, fontSize: "1rem" }}>{nft.name}</h3>
-                        <span className="chip">{nft.symbol}</span>
-                      </div>
-                      <p
-                        style={{
-                          margin: "0 0 12px",
-                          color: "var(--muted-fg)",
-                          fontSize: "0.88rem",
-                          lineHeight: 1.5,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {nft.description}
-                      </p>
-                      <div style={{ fontSize: "0.74rem", color: "var(--muted-fg)", fontFamily: "ui-monospace, monospace" }}>
-                        {new Date(nft.mintedAt).toLocaleDateString()} ·{" "}
-                        {nft.owner.slice(0, 8)}…{nft.owner.slice(-4)}
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
+          <Tabs defaultValue="collection">
+            <TabsList>
+              <TabsTrigger value="collection" className="gap-2">
+                <LayoutGrid className="h-3.5 w-3.5" /> Collection ({owned.length})
+              </TabsTrigger>
+              <TabsTrigger value="listings" className="gap-2">
+                <ShoppingBag className="h-3.5 w-3.5" /> My listings
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="collection" className="mt-6">
+              {owned.length === 0 ? (
+                <EmptyState
+                  icon={<LayoutGrid className="h-8 w-8" />}
+                  title="No NFTs yet"
+                  body="Mint your first collectible to see it here."
+                  action={<Button onClick={() => setMintOpen(true)}>Mint your first NFT</Button>}
+                />
+              ) : (
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {owned.map((nft) => (
+                    <NftCard
+                      key={nft.id}
+                      nft={nft}
+                      action={
+                        <Button variant="outline" size="sm" onClick={() => setListingNft(nft)}>
+                          List
+                        </Button>
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="listings" className="mt-6">
+              <MyListings wallet={wallet} />
+            </TabsContent>
+          </Tabs>
         )}
       </main>
+
+      <Dialog open={mintOpen} onOpenChange={setMintOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Mint a new NFT</DialogTitle>
+            <DialogDescription>
+              Four quick steps — details, image, review, mint.
+            </DialogDescription>
+          </DialogHeader>
+          <MintWizard owner={wallet?.address ?? ""} onMinted={handleMinted} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!listingNft} onOpenChange={(o) => { if (!o) setListingNft(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>List for sale</DialogTitle>
+            <DialogDescription>
+              {listingNft?.name} will be visible in the marketplace.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="price">Price (UCT)</Label>
+              <Input
+                id="price"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="e.g. 25"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setListingNft(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleList} disabled={!price || Number(price) <= 0}>
+                List NFT
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
+  );
+}
+
+function MyListings({ wallet }: { wallet: Wallet }) {
+  const [listings, setListings] = useState(() => myListings(wallet.address));
+
+  function handleCancel(id: string) {
+    try {
+      cancelListing(id, wallet.address);
+      setListings(myListings(wallet.address));
+      toast.success("Listing cancelled");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not cancel");
+    }
+  }
+
+  if (listings.length === 0) {
+    return (
+      <EmptyState
+        icon={<ShoppingBag className="h-8 w-8" />}
+        title="No active listings"
+        body="List an NFT from your collection to put it up for sale."
+      />
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {listings.map((listing) => {
+        const nft = listNfts().find((n) => n.id === listing.nftId);
+        if (!nft) return null;
+        return (
+          <div key={listing.id} className="overflow-hidden rounded-xl border bg-card">
+            <div className="aspect-square overflow-hidden">
+              <NftCard nft={nft} />
+            </div>
+            <div className="flex items-center justify-between p-4">
+              <div>
+                <p className="text-sm font-medium">{nft.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {listing.status === "active" ? (
+                    <>Listed for <span className="font-mono text-foreground">{listing.price} UCT</span></>
+                  ) : listing.status === "sold" ? (
+                    <>Sold to <span className="font-mono">{listing.buyer?.slice(0, 8)}…</span></>
+                  ) : (
+                    "Cancelled"
+                  )}
+                </p>
+              </div>
+              {listing.status === "active" ? (
+                <Button variant="ghost" size="sm" onClick={() => handleCancel(listing.id)}>
+                  Cancel
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

@@ -1,24 +1,17 @@
 "use client";
 
 /**
- * NftArt — deterministic generative art for a minted NFT.
- *
- * A seed renders a unique gradient + geometric pattern. Pure SVG, no images.
+ * NftArt — deterministic generative art for NFTs minted without an upload.
+ * Pure SVG, no images. Same seed always renders the same piece.
  */
 
-const HUES = [38, 42, 45, 262, 265, 270, 200, 160];
+const HUES = [258, 262, 265, 270, 230, 200, 45, 160];
 
 function seedHue(seed: number): number {
   return HUES[seed % HUES.length];
 }
 
-export function NftArt({
-  seed,
-  className,
-}: {
-  seed: number;
-  className?: string;
-}) {
+export function NftArt({ seed, className }: { seed: number; className?: string }) {
   const hue = seedHue(seed);
   const hue2 = (hue + 40 + (seed % 60)) % 360;
   const id = `g${seed % 997}`;
@@ -29,13 +22,13 @@ export function NftArt({
       className={className}
       role="img"
       aria-label="Generated NFT artwork"
-      style={{ background: `hsl(${hue} 60% 12%)`, width: "100%", height: "100%" }}
+      style={{ background: `hsl(${hue} 45% 10%)`, width: "100%", height: "100%" }}
     >
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor={`hsl(${hue} 85% 55%)`} />
-          <stop offset="55%" stopColor={`hsl(${hue2} 70% 42%)`} />
-          <stop offset="100%" stopColor={`hsl(${hue} 80% 22%)`} />
+          <stop offset="55%" stopColor={`hsl(${hue2} 70% 40%)`} />
+          <stop offset="100%" stopColor={`hsl(${hue} 80% 20%)`} />
         </linearGradient>
       </defs>
       <rect width="400" height="400" fill={`url(#${id})`} />
