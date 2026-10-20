@@ -31,6 +31,9 @@ export default function MarketPage() {
   const [query, setQuery] = useState("");
   const [buying, setBuying] = useState<Listing | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sold, setSold] = useState(false);
+  // Bumped after any purchase so the listing list re-reads localStorage.
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     setWallet(currentWallet());
@@ -46,18 +49,20 @@ export default function MarketPage() {
       return (
         nft.name.toLowerCase().includes(q) ||
         nft.description.toLowerCase().includes(q) ||
-        nft.symbol.toLowerCase().includes(q)
+        nft.symbol.toLowerCase().includes(q) ||
+        l.seller.toLowerCase().includes(q)
       );
     });
-  }, [query, buying]);
+  }, [query, version]);
 
   async function handleBuy() {
     if (!buying || !wallet) return;
     setBusy(true);
     try {
       await buyNft(buying.id, wallet);
+      setSold(true);
+      setVersion((v) => v + 1);
       toast.success("Purchase complete — NFT transferred to your wallet");
-      setBuying(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Purchase failed");
     } finally {
@@ -129,7 +134,7 @@ export default function MarketPage() {
                       <span className="text-[11px] text-muted-foreground">
                         by <span className="font-mono">{listing.seller.slice(0, 8)}…</span>
                       </span>
-                      <Button size="sm" onClick={() => setBuying(listing)}>
+                      <Button size="sm" onClick={() => { setSold(false); setBuying(listing); }}>
                         Buy <ArrowRight className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -141,52 +146,91 @@ export default function MarketPage() {
         )}
       </main>
 
-      <Dialog open={!!buying} onOpenChange={(o) => { if (!o) setBuying(null); }}>
+      <Dialog open={!!buying} onOpenChange={(o) => { if (!o) { setBuying(null); setSold(false); } }}>
         <DialogContent className="max-w-md">
           {buying ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Confirm purchase</DialogTitle>
-                <DialogDescription>
-                  {getNft(buying.nftId)?.name} — {buying.price} UCT
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex items-center gap-4">
-                <div className="aspect-square w-20 shrink-0 overflow-hidden rounded-lg border">
-                  {(() => {
-                    const nft = getNft(buying.nftId);
-                    return nft ? <NftMedia nft={nft} /> : null;
-                  })()}
+            sold ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Purchase complete</DialogTitle>
+                  <DialogDescription>
+                    {getNft(buying.nftId)?.name} is now in your collection.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex items-center gap-4">
+                  <div className="aspect-square w-20 shrink-0 overflow-hidden rounded-lg border">
+                    {(() => {
+                      const nft = getNft(buying.nftId);
+                      return nft ? <NftMedia nft={nft} /> : null;
+                    })()}
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-muted-foreground">
+                      Paid: <span className="font-mono text-foreground">{buying.price} UCT</span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      New balance:{" "}
+                      <span className="font-mono text-foreground">{wallet?.uctBalance ?? "—"} UCT</span>
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-1 text-sm">
-                  <p className="text-muted-foreground">
-                    Seller: <span className="font-mono">{buying.seller.slice(0, 10)}…</span>
-                  </p>
-                  <p className="text-muted-foreground">
-                    Your balance:{" "}
-                    <span className="font-mono text-foreground">
-                      {wallet?.uctBalance ?? "—"} UCT
-                    </span>
-                    {wallet?.kind === "guest" ? (
-                      <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">
-                        guest
+                <div className="flex justify-end gap-2">
+                  <Button onClick={() => { setBuying(null); setSold(false); }}>
+                    Done
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Confirm purchase</DialogTitle>
+                  <DialogDescription>
+                    {getNft(buying.nftId)?.name} — {buying.price} UCT
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex items-center gap-4">
+                  <div className="aspect-square w-20 shrink-0 overflow-hidden rounded-lg border">
+                    {(() => {
+                      const nft = getNft(buying.nftId);
+                      return nft ? <NftMedia nft={nft} /> : null;
+                    })()}
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-muted-foreground">
+                      Seller: <span className="font-mono">{buying.seller.slice(0, 10)}…</span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      Your balance:{" "}
+                      <span className="font-mono text-foreground">
+                        {wallet?.uctBalance ?? "—"} UCT
                       </span>
-                    ) : null}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    The NFT transfers to your wallet instantly.
-                  </p>
+                      {wallet?.kind === "guest" ? (
+                        <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">
+                          guest
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      The NFT transfers to your wallet instantly.
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setBuying(null)} disabled={busy}>
-                  Cancel
-                </Button>
-                <Button onClick={handleBuy} disabled={busy}>
-                  {busy ? "Processing…" : `Buy for ${buying.price} UCT`}
-                </Button>
-              </div>
-            </>
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setBuying(null)} disabled={busy}>
+                    Cancel
+                  </Button>
+                  {wallet ? (
+                    <Button onClick={handleBuy} disabled={busy}>
+                      {busy ? "Processing…" : `Buy for ${buying.price} UCT`}
+                    </Button>
+                  ) : (
+                    <Button disabled>
+                      Connect a wallet to buy
+                    </Button>
+                  )}
+                </div>
+              </>
+            )
           ) : null}
         </DialogContent>
       </Dialog>
