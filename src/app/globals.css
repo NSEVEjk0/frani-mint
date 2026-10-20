@@ -2,28 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Frani Mint — art-gallery aesthetic
+   Near-black canvas, elegant serif display, champagne accent,
+   editorial whitespace. The artwork is the hero.
+   ============================================================ */
+
 @layer base {
   :root {
-    --background: 240 10% 4%;
-    --foreground: 240 8% 94%;
-    --card: 240 9% 6.5%;
-    --card-foreground: 240 8% 94%;
-    --popover: 240 9% 6.5%;
-    --popover-foreground: 240 8% 94%;
-    --primary: 258 90% 66%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 6% 12%;
-    --secondary-foreground: 240 8% 94%;
-    --muted: 240 6% 11%;
-    --muted-foreground: 240 5% 62%;
-    --accent: 240 6% 14%;
-    --accent-foreground: 240 8% 94%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 240 6% 14%;
-    --input: 240 6% 16%;
-    --ring: 258 90% 66%;
-    --radius: 0.75rem;
+    --background: 0 0% 4%;            /* #0a0a0a */
+    --foreground: 40 20% 94%;         /* warm ivory text */
+    --card: 0 0% 6%;                  /* #0f0f0f */
+    --card-foreground: 40 20% 94%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 40 20% 94%;
+    --primary: 40 40% 74%;            /* champagne #d8c9a3 */
+    --primary-foreground: 0 0% 6%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 40 20% 94%;
+    --muted: 0 0% 9%;
+    --muted-foreground: 40 8% 58%;
+    --accent: 0 0% 12%;
+    --accent-foreground: 40 20% 94%;
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 8% 14%;
+    --input: 40 8% 16%;
+    --ring: 40 40% 74%;
+    --radius: 0.5rem;
   }
 
   * {
@@ -36,15 +42,15 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-feature-settings: "ss01", "cv02", "cv11";
   }
 
   ::selection {
-    background: hsl(var(--primary) / 0.35);
+    background: hsl(var(--primary) / 0.3);
   }
 
   :focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1.5px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 
@@ -63,47 +69,20 @@
 
 @layer utilities {
   .glass {
-    background: hsl(var(--card) / 0.6);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: hsl(var(--card) / 0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .text-gradient {
-    background: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 50%, #6366f1 100%);
+    background: linear-gradient(135deg, #ece4d0 0%, #d8c9a3 45%, #b8a67d 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-  }
-
-  .text-gradient-warm {
-    background: linear-gradient(135deg, #fcd34d 0%, #f59e0b 50%, #f97316 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  .shimmer-text {
-    background: linear-gradient(
-      110deg,
-      hsl(var(--muted-foreground)) 30%,
-      hsl(var(--foreground)) 50%,
-      hsl(var(--muted-foreground)) 70%
-    );
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: shimmer 2.4s linear infinite;
   }
 
   .hairline {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      hsl(var(--border)) 20%,
-      hsl(var(--border)) 80%,
-      transparent
-    );
+    background: linear-gradient(90deg, transparent, hsl(var(--border)) 25%, hsl(var(--border)) 75%, transparent);
     height: 1px;
   }
 
@@ -118,19 +97,27 @@
     padding: 1px;
     background: linear-gradient(
       135deg,
-      hsl(var(--primary) / 0.5),
-      transparent 40%,
-      transparent 60%,
-      hsl(var(--primary) / 0.25)
+      hsl(var(--primary) / 0.4),
+      transparent 45%,
+      transparent 55%,
+      hsl(var(--primary) / 0.15)
     );
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     pointer-events: none;
-    opacity: 0.6;
-    transition: opacity 0.3s ease;
+    opacity: 0.5;
+    transition: opacity 0.4s ease;
   }
   .card-glow:hover::before {
     opacity: 1;
+  }
+
+  /* Editorial serif display */
+  .display-serif {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    line-height: 1.05;
   }
 }

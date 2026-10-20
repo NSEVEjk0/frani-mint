@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Sparkles, Wallet as WalletIcon } from "lucide-react";
+import { Loader2, Wallet as WalletIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MintWordmark } from "@/components/logo";
 import {
   connectWallet,
   connectGuestWallet,
@@ -54,7 +55,6 @@ export function Header() {
     const cached = currentWallet();
     if (cached) {
       setWallet(cached);
-      // For real wallets, verify the SDK still has it and refresh balance.
       if (cached.kind === "unicity") {
         restoreWallet()
           .then((w) => {
@@ -111,15 +111,10 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-border/60 glass">
+      <header className="sticky top-0 z-40 border-b border-border/50 glass">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
-              <Sparkles className="h-4 w-4" />
-            </span>
-            <span className="font-display text-[15px] font-semibold tracking-tight">
-              Frani <span className="text-gradient">Mint</span>
-            </span>
+          <Link href="/" className="text-foreground">
+            <MintWordmark />
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex">
@@ -144,7 +139,7 @@ export function Header() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-2 rounded-full pl-1.5 pr-3">
                   <Avatar className="h-6 w-6">
-                    <AvatarFallback className="bg-primary/20 text-[10px] font-bold text-primary">
+                    <AvatarFallback className="bg-primary/15 text-[10px] font-bold text-primary">
                       {wallet.nametag.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
