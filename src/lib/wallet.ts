@@ -191,59 +191,118 @@ export function transferNft(nftId: string, to: string) {
   write(NFTS_KEY, nfts);
 }
 
-/* ------------------------------ marketplace ------------------------------ */
+/* ------------------------------ marketplace (shared) ------------------------------ */
 
-export function listListings(): Listing[] {
-  return read<Listing[]>(LISTINGS_KEY, []);
+/**
+ * Listings are stored server-side in a shared Turso database so every user
+ * sees the same marketplace. The client keeps a small local cache for
+ * instant UI, but the source of truth is the API.
+ */
+
+export interface SharedListing extends Listing {
+  nft: {
+    name: string;
+    description: string;
+    symbol: string;
+    imageType: string;
+    image?: string;
+    artSeed?: number;
+  };
 }
 
-export function activeListings(): Listing[] {
-  return listListings().filter((l) => l.status === "active");
+const LISTINGS_CACHE_KEY = "frani-mint:listings-cache";
+
+export async function fetchListings(): Promise<SharedListing[]> {
+  const res = await fetch("/api/listings", { cache: "no-store" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not load listings");
+  }
+  const data = await res.json();
+  const listings = (data.listings ?? []) as SharedListing[];
+  try {
+    window.localStorage.setItem(LISTINGS_CACHE_KEY, JSON.stringify(listings));
+  } catch {
+    /* ignore */
+  }
+  return listings;
 }
 
-export function myListings(address: string): Listing[] {
-  return listListings().filter((l) => l.seller.toLowerCase() === address.toLowerCase());
+export function cachedListings(): SharedListing[] {
+  return read<SharedListing[]>(LISTINGS_CACHE_KEY, []);
 }
 
-export function listNftForSale(nftId: string, seller: string, price: string): Listing {
+export async function listNftForSale(
+  nftId: string,
+  seller: string,
+  price: string
+): Promise<SharedListing> {
   const nft = getNft(nftId);
   if (!nft) throw new Error("NFT not found");
   if (nft.owner.toLowerCase() !== seller.toLowerCase()) throw new Error("You don't own this NFT");
   const p = Number(price);
   if (!Number.isFinite(p) || p <= 0) throw new Error("Price must be a positive number");
-  const listings = listListings();
-  if (listings.some((l) => l.nftId === nftId && l.status === "active")) {
-    throw new Error("This NFT is already listed");
-  }
-  const listing: Listing = {
+
+  const listing: SharedListing = {
     id: `lst_${Date.now().toString(36)}_${randomHex(6)}`,
     nftId,
     seller,
     price: String(p),
     listedAt: new Date().toISOString(),
     status: "active",
+    nft: {
+      name: nft.name,
+      description: nft.description,
+      symbol: nft.symbol,
+      imageType: nft.imageType,
+      image: nft.image,
+      artSeed: nft.artSeed,
+    },
   };
-  listings.unshift(listing);
-  write(LISTINGS_KEY, listings);
+
+  const res = await fetch("/api/listings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(listing),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not create listing");
+  }
   return listing;
 }
 
-export function cancelListing(listingId: string, by: string) {
-  const listings = listListings();
-  const listing = listings.find((l) => l.id === listingId);
-  if (!listing) throw new Error("Listing not found");
-  if (listing.status !== "active") throw new Error("Listing is not active");
-  if (listing.seller.toLowerCase() !== by.toLowerCase()) throw new Error("Only the seller can cancel");
-  listing.status = "cancelled";
-  write(LISTINGS_KEY, listings);
+export async function cancelListing(listingId: string, by: string) {
+  const res = await fetch(`/api/listings/${encodeURIComponent(listingId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "cancel", by }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not cancel listing");
+  }
+}
+
+export async function completeSale(listingId: string, buyer: string) {
+  const res = await fetch(`/api/listings/${encodeURIComponent(listingId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ buyer }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not complete purchase");
+  }
 }
 
 /**
  * Buy an NFT. With a real Unicity wallet this performs a real UCT transfer to
- * the seller's address; with a guest wallet it simulates the exchange.
+ * the seller's address; with a guest wallet it simulates the exchange. The
+ * sale is then recorded in the shared marketplace.
  */
-export async function buyNft(listingId: string, wallet: Wallet): Promise<Listing> {
-  const listings = listListings();
+export async function buyNft(listingId: string, wallet: Wallet): Promise<SharedListing> {
+  const listings = await fetchListings();
   const listing = listings.find((l) => l.id === listingId);
   if (!listing) throw new Error("Listing not found");
   if (listing.status !== "active") throw new Error("Listing is not active");
@@ -261,20 +320,21 @@ export async function buyNft(listingId: string, wallet: Wallet): Promise<Listing
 
   if (wallet.kind === "unicity") {
     // Real transfer to the seller's DIRECT address.
-    await sendUct(listing.seller, listing.price, `Frani Mint: ${getNft(listing.nftId)?.name ?? "NFT"}`);
+    await sendUct(listing.seller, listing.price, `Frani Mint: ${listing.nft.name}`);
     const fresh = await refreshBalance(wallet);
     wallet.uctBalance = fresh.uctBalance;
   } else {
     wallet.uctBalance = (balance - price).toString();
   }
 
+  // Record the sale in the shared marketplace.
+  await completeSale(listingId, wallet.address);
+
+  // Local NFT ownership transfer (preview store).
   transferNft(listing.nftId, wallet.address);
-  listing.status = "sold";
-  listing.buyer = wallet.address;
-  listing.soldAt = new Date().toISOString();
-  write(LISTINGS_KEY, listings);
   write(WALLET_KEY, wallet);
-  return listing;
+
+  return { ...listing, status: "sold", buyer: wallet.address, soldAt: new Date().toISOString() };
 }
 
 /** Downscale an uploaded image to a max dimension and return a data URL. */

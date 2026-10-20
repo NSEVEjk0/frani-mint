@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LayoutGrid, Plus, ShoppingBag } from "lucide-react";
 import { Header } from "@/components/header";
 import { BackButton } from "@/components/back-button";
 import { MintWizard } from "@/components/mint-wizard";
-import { NftCard } from "@/components/nft-card";
+import { NftCard, NftMedia } from "@/components/nft-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +24,10 @@ import {
   currentWallet,
   listNfts,
   listNftForSale,
-  myListings,
   cancelListing,
+  fetchListings,
   type Nft,
+  type SharedListing,
   type Wallet,
 } from "@/lib/wallet";
 
@@ -52,10 +53,10 @@ export default function StudioPage() {
     setMintOpen(false);
   }
 
-  function handleList() {
+  async function handleList() {
     if (!wallet || !listingNft) return;
     try {
-      listNftForSale(listingNft.id, wallet.address, price);
+      await listNftForSale(listingNft.id, wallet.address, price);
       toast.success("Listed for sale in the marketplace");
       setListingNft(null);
       setPrice("");
@@ -186,13 +187,30 @@ export default function StudioPage() {
 }
 
 function MyListings({ wallet }: { wallet: Wallet }) {
-  const [listings, setListings] = useState(() => myListings(wallet.address));
+  const [listings, setListings] = useState<SharedListing[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  function handleCancel(id: string) {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      cancelListing(id, wallet.address);
-      setListings(myListings(wallet.address));
+      const all = await fetchListings();
+      setListings(all.filter((l) => l.seller.toLowerCase() === wallet.address.toLowerCase()));
+    } catch {
+      setListings([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [wallet.address]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleCancel(id: string) {
+    try {
+      await cancelListing(id, wallet.address);
       toast.success("Listing cancelled");
+      await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not cancel");
     }
@@ -210,36 +228,32 @@ function MyListings({ wallet }: { wallet: Wallet }) {
 
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {listings.map((listing) => {
-        const nft = listNfts().find((n) => n.id === listing.nftId);
-        if (!nft) return null;
-        return (
-          <div key={listing.id} className="overflow-hidden rounded-xl border bg-card">
-            <div className="aspect-square overflow-hidden">
-              <NftCard nft={nft} />
-            </div>
-            <div className="flex items-center justify-between p-4">
-              <div>
-                <p className="text-sm font-medium">{nft.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {listing.status === "active" ? (
-                    <>Listed for <span className="font-mono text-foreground">{listing.price} UCT</span></>
-                  ) : listing.status === "sold" ? (
-                    <>Sold to <span className="font-mono">{listing.buyer?.slice(0, 8)}…</span></>
-                  ) : (
-                    "Cancelled"
-                  )}
-                </p>
-              </div>
-              {listing.status === "active" ? (
-                <Button variant="ghost" size="sm" onClick={() => handleCancel(listing.id)}>
-                  Cancel
-                </Button>
-              ) : null}
-            </div>
+      {listings.map((listing) => (
+        <div key={listing.id} className="overflow-hidden rounded-xl border bg-card">
+          <div className="aspect-square overflow-hidden">
+            <NftMedia nft={{ id: listing.nftId, name: listing.nft.name, description: listing.nft.description, symbol: listing.nft.symbol, imageType: listing.nft.imageType as "generative" | "upload" | "ai", image: listing.nft.image, artSeed: listing.nft.artSeed, mintedAt: "", owner: "", txRef: "" }} />
           </div>
-        );
-      })}
+          <div className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm font-medium">{listing.nft.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {listing.status === "active" ? (
+                  <>Listed for <span className="font-mono text-foreground">{listing.price} UCT</span></>
+                ) : listing.status === "sold" ? (
+                  <>Sold to <span className="font-mono">{listing.buyer?.slice(0, 8)}…</span></>
+                ) : (
+                  "Cancelled"
+                )}
+              </p>
+            </div>
+            {listing.status === "active" ? (
+              <Button variant="ghost" size="sm" onClick={() => handleCancel(listing.id)}>
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
