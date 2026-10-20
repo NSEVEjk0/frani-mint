@@ -70,13 +70,14 @@ export function Header() {
     try {
       const w = await connectWallet(mnemonicInput ? { mnemonic: mnemonicInput } : undefined);
       setWallet(w);
-      setConnectOpen(false);
-      setMode("choose");
       setMnemonic("");
       if (w.generatedMnemonic) {
+        // Keep the dialog open to show the recovery phrase once.
         setFreshMnemonic(w.generatedMnemonic);
         setMode("mnemonic");
       } else {
+        setConnectOpen(false);
+        setMode("choose");
         toast.success("Wallet connected");
       }
     } catch (err) {
