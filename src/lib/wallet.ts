@@ -14,6 +14,7 @@ import {
   sendUct,
   type UnicityWallet,
 } from "@/lib/unicity-wallet";
+import { connectExistingWallet, type SphereConnectSession } from "@/lib/sphere-connect";
 
 export interface Nft {
   id: string;
@@ -46,9 +47,11 @@ export interface Wallet {
   connectedAt: string;
   /** null = network sync unavailable (wallet connected, balance unknown). */
   uctBalance: string | null;
-  kind: "unicity" | "guest";
+  kind: "unicity" | "connect" | "guest";
   /** Present only when this wallet was just created (show once). */
   generatedMnemonic?: string;
+  /** Transport used for a Sphere Connect session (extension/iframe/popup). */
+  connectTransport?: string;
 }
 
 const WALLET_KEY = "frani-mint:wallet";
@@ -125,6 +128,21 @@ export function connectGuestWallet(): Wallet {
     connectedAt: new Date().toISOString(),
     uctBalance: "1000",
     kind: "guest",
+  };
+  write(WALLET_KEY, wallet);
+  return wallet;
+}
+
+/** Connect the user's EXISTING Unicity wallet via Sphere Connect. */
+export async function connectWalletViaSphereConnect(): Promise<Wallet> {
+  const session: SphereConnectSession = await connectExistingWallet();
+  const wallet: Wallet = {
+    address: session.address,
+    nametag: session.nametag,
+    connectedAt: new Date().toISOString(),
+    uctBalance: null, // balance comes from the wallet's own UI/approval
+    kind: "connect",
+    connectTransport: session.transport,
   };
   write(WALLET_KEY, wallet);
   return wallet;

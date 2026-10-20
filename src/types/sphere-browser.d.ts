@@ -44,3 +44,51 @@ declare module "@unicitylabs/sphere-sdk/impl/browser" {
     }
   ): BrowserProviders & { walletApi: WalletApiTransportConfig };
 }
+
+declare module "@unicitylabs/sphere-sdk/connect/browser" {
+  export type DetectedTransport = "iframe" | "extension" | "popup";
+
+  export interface PublicIdentity {
+    chainPubkey: string;
+    directAddress?: string;
+    nametag?: string;
+  }
+
+  export interface ConnectResult {
+    sessionId: string;
+    permissions: string[];
+    identity: PublicIdentity;
+    locked?: boolean;
+  }
+
+  export interface AutoConnectConfig {
+    dapp: { name: string; description?: string; icon?: string; url: string };
+    walletUrl?: string;
+    permissions?: string[];
+    silent?: boolean;
+    network?: { id: number; name?: string };
+    resumeSessionId?: string;
+    timeout?: number;
+    intentTimeout?: number;
+    forceTransport?: DetectedTransport;
+  }
+
+  export interface AutoConnectResult {
+    client: {
+      disconnect(): Promise<void>;
+      isConnected: boolean;
+      walletIdentity: PublicIdentity | null;
+      query<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+      intent<T = unknown>(action: string, params: Record<string, unknown>): Promise<T>;
+      on(event: string, handler: (data: unknown) => void): () => void;
+    };
+    connection: ConnectResult;
+    transport: DetectedTransport;
+    disconnect: () => Promise<void>;
+  }
+
+  export function hasExtension(): boolean;
+  export function isInIframe(): boolean;
+  export function detectTransport(): DetectedTransport;
+  export function autoConnect(config: AutoConnectConfig): Promise<AutoConnectResult>;
+}

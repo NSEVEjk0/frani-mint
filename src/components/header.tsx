@@ -29,12 +29,14 @@ import { MintWordmark } from "@/components/logo";
 import {
   connectWallet,
   connectGuestWallet,
+  connectWalletViaSphereConnect,
   currentWallet,
   disconnectWallet,
   refreshBalance,
   restoreWallet,
   type Wallet,
 } from "@/lib/wallet";
+import { detectWalletTransport } from "@/lib/sphere-connect";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -49,6 +51,7 @@ export function Header() {
   const [mnemonic, setMnemonic] = useState("");
   const [busy, setBusy] = useState(false);
   const [freshMnemonic, setFreshMnemonic] = useState("");
+  const [walletDetected, setWalletDetected] = useState<{ available: boolean; reason?: string } | null>(null);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -92,6 +95,21 @@ export function Header() {
     setConnectOpen(false);
     setMode("choose");
     toast.info("Connected as guest — preview only");
+  }
+
+  async function handleConnectExisting() {
+    setBusy(true);
+    try {
+      const w = await connectWalletViaSphereConnect();
+      setWallet(w);
+      setConnectOpen(false);
+      setMode("choose");
+      toast.success(`Connected ${w.nametag} via Unicity wallet`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not connect wallet");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleDisconnect() {
@@ -189,18 +207,25 @@ export function Header() {
               <DialogHeader>
                 <DialogTitle>Connect a wallet</DialogTitle>
                 <DialogDescription>
-                  Connect your Unicity wallet to mint and trade. New to Unicity?
-                  We&apos;ll create a wallet for you.
+                  Connect your existing Unicity wallet, or create a new one here.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3 pt-1">
-                <Button className="w-full justify-start" onClick={() => setMode("create")} disabled={busy}>
+                {/* Connect existing Unicity wallet (native Sphere Connect) */}
+                <Button
+                  className="w-full justify-start"
+                  onClick={() => { setWalletDetected(detectWalletTransport()); void handleConnectExisting(); }}
+                  disabled={busy}
+                >
                   <WalletIcon className="h-4 w-4" />
-                  Create a new Unicity wallet
+                  {busy ? "Waiting for wallet…" : "Connect existing Unicity wallet"}
                 </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => setMode("import")} disabled={busy}>
-                  Import an existing mnemonic
-                </Button>
+                {walletDetected && !walletDetected.available ? (
+                  <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    {walletDetected.reason}
+                  </p>
+                ) : null}
+
                 <div className="relative py-1">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t border-border" />
@@ -209,6 +234,13 @@ export function Header() {
                     <span className="bg-card px-3 text-xs text-muted-foreground">or</span>
                   </div>
                 </div>
+
+                <Button variant="outline" className="w-full justify-start" onClick={() => setMode("create")} disabled={busy}>
+                  Create a new Unicity wallet
+                </Button>
+                <Button variant="outline" className="w-full justify-start" onClick={() => setMode("import")} disabled={busy}>
+                  Import an existing mnemonic
+                </Button>
                 <Button variant="ghost" className="w-full justify-start text-muted-foreground" onClick={handleGuest} disabled={busy}>
                   Continue as guest (preview)
                 </Button>
