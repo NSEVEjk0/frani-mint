@@ -49,6 +49,21 @@ export async function ensureListingsTable() {
       created_at TEXT NOT NULL
     )
   `);
+
+  // Idempotent migrations for tables created before these columns existed.
+  const MIGRATIONS: Array<[string, string]> = [
+    ["mint_listings", "sold_price TEXT"],
+    ["mint_listings", "expires_at TEXT"],
+    ["mint_listings", "nft_collection TEXT"],
+  ];
+  for (const [table, col] of MIGRATIONS) {
+    try {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col}`);
+    } catch {
+      // Column already exists — fine.
+    }
+  }
+
   await db.close();
 }
 
