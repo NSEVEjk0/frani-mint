@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { LayoutGrid, Plus, ShoppingBag } from "lucide-react";
+import { LayoutGrid, Plus, ShoppingBag, Tag } from "lucide-react";
 import { Header } from "@/components/header";
 import { BackButton } from "@/components/back-button";
 import { MintWizard } from "@/components/mint-wizard";
 import { NftCard, NftMedia } from "@/components/nft-card";
 import { NftDetailDialog } from "@/components/nft-detail-dialog";
+import { OffersPanel } from "@/components/offers-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,6 +116,9 @@ export default function StudioPage() {
               <TabsTrigger value="listings" className="gap-2">
                 <ShoppingBag className="h-3.5 w-3.5" /> My listings
               </TabsTrigger>
+              <TabsTrigger value="offers" className="gap-2">
+                <Tag className="h-3.5 w-3.5" /> Offers
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="collection" className="mt-6">
@@ -149,6 +153,10 @@ export default function StudioPage() {
 
             <TabsContent value="listings" className="mt-6">
               <MyListings wallet={wallet} />
+            </TabsContent>
+
+            <TabsContent value="offers" className="mt-6">
+              <OffersPanel wallet={wallet} />
             </TabsContent>
           </Tabs>
         )}

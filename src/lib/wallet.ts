@@ -383,10 +383,15 @@ export async function makeOffer(listingId: string, bidder: string, price: string
   return offer;
 }
 
-export async function fetchOffers(params?: { listingId?: string; seller?: string }): Promise<Offer[]> {
+export async function fetchOffers(params?: {
+  listingId?: string;
+  seller?: string;
+  bidder?: string;
+}): Promise<Offer[]> {
   const q = new URLSearchParams();
   if (params?.listingId) q.set("listing", params.listingId);
   if (params?.seller) q.set("seller", params.seller);
+  if (params?.bidder) q.set("bidder", params.bidder);
   const res = await fetch(`/api/offers?${q.toString()}`, { cache: "no-store" });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

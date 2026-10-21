@@ -302,6 +302,26 @@ export function MintWizard({ owner, onMinted }: { owner: string; onMinted: (nft:
             onChange={(e) => handleFile(e.target.files?.[0])}
           />
 
+          {/* Copies > 1: clarify image behavior */}
+          {count > 1 ? (
+            <div className="rounded-lg border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+              {imageType === "generative" ? (
+                <>Each of the {count} copies gets <span className="font-medium text-foreground">unique generative art</span>.</>
+              ) : (
+                <>
+                  All {count} copies will <span className="font-medium text-foreground">share this image</span>.{" "}
+                  <button
+                    type="button"
+                    onClick={() => { setImageType("generative"); setImage(null); }}
+                    className="font-medium text-primary underline underline-offset-2 hover:text-foreground"
+                  >
+                    Use unique generative art instead
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+
           {imageType === "ai" ? (
             <div className="space-y-3">
               <div className="space-y-2">
@@ -413,14 +433,21 @@ export function MintWizard({ owner, onMinted }: { owner: string; onMinted: (nft:
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{symbol || "UCT-NFT"}</Badge>
                 <Badge variant="outline" className="text-muted-foreground">
-                  {imageType === "upload" ? "Uploaded image" : "Generative art"}
+                  {imageType === "upload" ? "Uploaded image" : imageType === "ai" ? "AI generated" : "Generative art"}
                 </Badge>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {description || "No description."}
               </p>
               <p className="pt-1 text-xs text-muted-foreground">
-                Minted to <span className="font-mono">{owner.slice(0, 10)}…{owner.slice(-4)}</span>
+                {count > 1 ? (
+                  <>
+                    <span className="font-medium text-foreground">{count} copies</span>
+                    {imageType === "generative" ? " · each with unique art" : " · sharing this image"}
+                  </>
+                ) : (
+                  <>Minted to <span className="font-mono">{owner.slice(0, 10)}…{owner.slice(-4)}</span></>
+                )}
               </p>
             </div>
           </div>

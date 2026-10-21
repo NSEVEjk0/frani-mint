@@ -238,7 +238,11 @@ export async function createOffer(entry: {
   await db.close();
 }
 
-export async function listOffers(params?: { listingId?: string; seller?: string }): Promise<OfferRow[]> {
+export async function listOffers(params?: {
+  listingId?: string;
+  seller?: string;
+  bidder?: string;
+}): Promise<OfferRow[]> {
   const db = client();
   let sql = "SELECT * FROM mint_offers WHERE 1=1";
   const args: (string | number | bigint | null | Uint8Array)[] = [];
@@ -249,6 +253,10 @@ export async function listOffers(params?: { listingId?: string; seller?: string 
   if (params?.seller) {
     sql += " AND listing_id IN (SELECT id FROM mint_listings WHERE seller = ?)";
     args.push(params.seller);
+  }
+  if (params?.bidder) {
+    sql += " AND bidder = ?";
+    args.push(params.bidder);
   }
   sql += " ORDER BY created_at DESC";
   const res = await db.execute({ sql, args });

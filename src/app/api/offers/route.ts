@@ -4,9 +4,10 @@ import { ensureListingsTable, createOffer, listOffers } from "@/lib/turso";
 export async function GET(req: NextRequest) {
   const listingId = req.nextUrl.searchParams.get("listing") ?? undefined;
   const seller = req.nextUrl.searchParams.get("seller") ?? undefined;
+  const bidder = req.nextUrl.searchParams.get("bidder") ?? undefined;
   try {
     await ensureListingsTable();
-    const offers = await listOffers({ listingId, seller });
+    const offers = await listOffers({ listingId, seller, bidder });
     return NextResponse.json({ offers });
   } catch (err) {
     return NextResponse.json(
