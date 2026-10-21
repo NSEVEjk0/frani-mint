@@ -22,8 +22,10 @@ import {
   buyNft,
   currentWallet,
   fetchListings,
+  fetchOffers,
   isListingExpired,
   makeOffer,
+  type Offer,
   type SharedListing,
   type Wallet,
 } from "@/lib/wallet";
@@ -41,6 +43,8 @@ export default function MarketPage() {
   const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState<"active" | "collections" | "sold">("active");
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
+  const [offersByListing, setOffersByListing] = useState<Record<string, Offer[]>>({});
+  const [offersOpen, setOffersOpen] = useState<SharedListing | null>(null);
 
   useEffect(() => {
     setWallet(currentWallet());
@@ -62,6 +66,29 @@ export default function MarketPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Load pending offers for all active listings so cards can show offer activity.
+  useEffect(() => {
+    if (active.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const map: Record<string, Offer[]> = {};
+      await Promise.all(
+        active.map(async (l) => {
+          try {
+            const offers = await fetchOffers({ listingId: l.id });
+            map[l.id] = offers.filter((o) => o.status === "pending");
+          } catch {
+            map[l.id] = [];
+          }
+        })
+      );
+      if (!cancelled) setOffersByListing(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 
   const active = useMemo(
     () => allListings.filter((l) => l.status === "active" && !isListingExpired(l)),
@@ -310,6 +337,22 @@ export default function MarketPage() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Offer activity on this NFT — visible to everyone */}
+                  {(offersByListing[listing.id] ?? []).length > 0 ? (
+                    <button
+                      onClick={() => setOffersOpen(listing)}
+                      className="flex w-full items-center justify-between rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-left transition-colors hover:border-amber-500/50"
+                    >
+                      <span className="text-xs font-medium text-amber-300">
+                        {offersByListing[listing.id]!.length} offer
+                        {offersByListing[listing.id]!.length > 1 ? "s" : ""} on this NFT
+                      </span>
+                      <span className="font-mono text-xs text-amber-300">
+                        highest {Math.max(...offersByListing[listing.id]!.map((o) => Number(o.price)))} UCT
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -382,6 +425,50 @@ export default function MarketPage() {
                 </div>
               </>
             )
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* View offers on an NFT — public, visible to everyone */}
+      <Dialog open={!!offersOpen} onOpenChange={(o) => { if (!o) setOffersOpen(null); }}>
+        <DialogContent className="max-w-md">
+          {offersOpen ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Offers on {offersOpen.nft.name}</DialogTitle>
+                <DialogDescription>
+                  Listed at {offersOpen.price} UCT · {offersByListing[offersOpen.id]?.length ?? 0} pending offer{(offersByListing[offersOpen.id]?.length ?? 0) === 1 ? "" : "s"}
+                </DialogDescription>
+              </DialogHeader>
+              {(offersByListing[offersOpen.id] ?? []).length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No pending offers yet. Be the first to make one.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {offersByListing[offersOpen.id]!.map((offer) => (
+                    <div key={offer.id} className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-3">
+                      <div>
+                        <p className="font-mono text-sm font-semibold">{offer.price} UCT</p>
+                        <p className="text-xs text-muted-foreground">
+                          from <span className="font-mono">{offer.bidder.slice(0, 10)}…</span> ·{" "}
+                          {new Date(offer.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <Badge variant="warning" className="font-mono">pending</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setOffersOpen(null)}>Close</Button>
+                {wallet ? (
+                  <Button onClick={() => { setOffering(offersOpen); setOffersOpen(null); setOfferPrice(""); }}>
+                    Make an offer
+                  </Button>
+                ) : null}
+              </div>
+            </>
           ) : null}
         </DialogContent>
       </Dialog>
