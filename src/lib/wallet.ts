@@ -9,6 +9,7 @@
 import {
   connectUnicityWallet,
   disconnectUnicityWallet,
+  getPrivateKey,
   loadUnicityWallet,
   refreshUctBalance,
   sendUct,
@@ -171,6 +172,11 @@ export async function disconnectWallet() {
     /* ignore */
   }
   await disconnectUnicityWallet();
+}
+
+/** Copy the wallet's private key (for real Unicity wallets). */
+export function copyPrivateKey(): string {
+  return getPrivateKey();
 }
 
 /** Refresh the real UCT balance and update the session. */

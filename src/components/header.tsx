@@ -26,10 +26,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MintWordmark } from "@/components/logo";
+import { PrivateKeyDialog } from "@/components/private-key-dialog";
 import {
   connectWallet,
   connectGuestWallet,
   connectWalletViaSphereConnect,
+  copyPrivateKey,
   currentWallet,
   disconnectWallet,
   refreshBalance,
@@ -53,6 +55,7 @@ export function Header() {
   const [busy, setBusy] = useState(false);
   const [freshMnemonic, setFreshMnemonic] = useState("");
   const [walletDetected, setWalletDetected] = useState<{ available: boolean; reason?: string } | null>(null);
+  const [keyOpen, setKeyOpen] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -186,7 +189,10 @@ export function Header() {
                   {wallet.address}
                 </div>
                 {wallet.kind === "unicity" ? (
-                  <DropdownMenuItem onClick={handleRefresh}>Refresh balance</DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem onClick={handleRefresh}>Refresh balance</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setKeyOpen(true)}>Copy private key</DropdownMenuItem>
+                  </>
                 ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleDisconnect}>Disconnect</DropdownMenuItem>
@@ -298,6 +304,20 @@ export function Header() {
               <div className="rounded-xl border bg-background/60 p-4">
                 <p className="font-mono text-sm leading-relaxed break-words">{freshMnemonic}</p>
               </div>
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-2.5">
+                <span className="text-xs text-muted-foreground">Private key</span>
+                <Button size="sm" variant="outline" onClick={() => {
+                  try {
+                    const pk = copyPrivateKey();
+                    void navigator.clipboard.writeText(pk);
+                    toast.success("Private key copied");
+                  } catch {
+                    toast.error("Could not read private key");
+                  }
+                }}>
+                  Copy private key
+                </Button>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => { setConnectOpen(false); setMode("choose"); setFreshMnemonic(""); }}>
                   I saved it
@@ -307,6 +327,8 @@ export function Header() {
           )}
         </DialogContent>
       </Dialog>
+
+      <PrivateKeyDialog open={keyOpen} onOpenChange={setKeyOpen} onReveal={copyPrivateKey} />
     </>
   );
 }

@@ -66,6 +66,17 @@ export function isValidMnemonic(phrase: string): boolean {
   return words.length === 12 || words.length === 24;
 }
 
+/** Derive the private key from the stored mnemonic (0x… hex). */
+export function getPrivateKey(): string {
+  const mnemonic = readStoredMnemonic();
+  if (!mnemonic || !isValidMnemonic(mnemonic)) {
+    throw new Error("No wallet key available");
+  }
+  const mk = identityFromMnemonicSync(mnemonic.trim());
+  const info = deriveAddressInfo(mk, BASE_PATH, 0, false);
+  return `0x${info.privateKey}`;
+}
+
 export function generateFreshMnemonic(): string {
   return generateMnemonic(128);
 }
