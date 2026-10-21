@@ -67,6 +67,15 @@ export default function MarketPage() {
     void load();
   }, [load]);
 
+  const active = useMemo(
+    () => allListings.filter((l) => l.status === "active" && !isListingExpired(l)),
+    [allListings]
+  );
+  const soldListings = useMemo(
+    () => allListings.filter((l) => l.status === "sold"),
+    [allListings]
+  );
+
   // Load pending offers for all active listings so cards can show offer activity.
   useEffect(() => {
     if (active.length === 0) return;
@@ -89,15 +98,6 @@ export default function MarketPage() {
       cancelled = true;
     };
   }, [active]);
-
-  const active = useMemo(
-    () => allListings.filter((l) => l.status === "active" && !isListingExpired(l)),
-    [allListings]
-  );
-  const soldListings = useMemo(
-    () => allListings.filter((l) => l.status === "sold"),
-    [allListings]
-  );
 
   const collections = useMemo(() => {
     const map = new Map<string, number>();
