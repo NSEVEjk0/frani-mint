@@ -32,7 +32,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  let body: { buyer?: string };
+  let body: { buyer?: string; soldPrice?: string };
   try {
     body = await req.json();
   } catch {
@@ -45,7 +45,7 @@ export async function POST(
 
   try {
     await ensureListingsTable();
-    await markSold(params.id, body.buyer);
+    await markSold(params.id, body.buyer, body.soldPrice);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(

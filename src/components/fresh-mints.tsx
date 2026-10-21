@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { NftMedia } from "@/components/nft-card";
-import { fetchListings, type SharedListing } from "@/lib/wallet";
+import { fetchListings, isListingExpired, type SharedListing } from "@/lib/wallet";
 
 /** "Fresh on the market" — the most recent shared listings, live. */
 export function FreshMints() {
@@ -13,7 +13,9 @@ export function FreshMints() {
 
   useEffect(() => {
     fetchListings()
-      .then((all) => setListings(all.filter((l) => l.status === "active").slice(0, 3)))
+      .then((all) =>
+        setListings(all.filter((l) => l.status === "active" && !isListingExpired(l)).slice(0, 3))
+      )
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);

@@ -21,6 +21,8 @@ export interface Nft {
   name: string;
   description: string;
   symbol: string;
+  /** Collection name (defaults to symbol). */
+  collection?: string;
   /** "generative" = auto art; "upload" = user image; "ai" = AI Horde image. */
   imageType: "generative" | "upload" | "ai";
   image?: string;
@@ -39,6 +41,19 @@ export interface Listing {
   status: "active" | "sold" | "cancelled";
   buyer?: string;
   soldAt?: string;
+  /** ISO expiry; undefined = stays until sold/cancelled. */
+  expiresAt?: string;
+  /** Actual sale price (when sold via an accepted offer). */
+  soldPrice?: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  type: "mint" | "list" | "sale" | "purchase" | "offer" | "cancel";
+  at: string;
+  title: string;
+  detail: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface Wallet {
@@ -57,6 +72,7 @@ export interface Wallet {
 const WALLET_KEY = "frani-mint:wallet";
 const NFTS_KEY = "frani-mint:nfts";
 const LISTINGS_KEY = "frani-mint:listings";
+const ACTIVITY_KEY = "frani-mint:activity";
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -184,6 +200,7 @@ export function mintNft(input: {
   name: string;
   description: string;
   symbol: string;
+  collection?: string;
   owner: string;
   imageType: "generative" | "upload" | "ai";
   image?: string;
@@ -194,6 +211,7 @@ export function mintNft(input: {
     name: input.name,
     description: input.description,
     symbol: input.symbol || "UCT-NFT",
+    collection: input.collection?.trim() || input.symbol || "UCT-NFT",
     imageType: input.imageType,
     image: input.imageType !== "generative" ? input.image : undefined,
     artSeed: input.imageType === "generative" ? Math.floor(Math.random() * 1e9) : undefined,
@@ -203,7 +221,29 @@ export function mintNft(input: {
   };
   nfts.unshift(nft);
   write(NFTS_KEY, nfts);
+  logActivity({
+    type: "mint",
+    title: `Minted ${nft.name}`,
+    detail: `${nft.symbol} · ${nft.collection}`,
+    meta: { nftId: nft.id },
+  });
   return nft;
+}
+
+/* ------------------------------ activity log ------------------------------ */
+
+export function logActivity(ev: Omit<ActivityEvent, "id" | "at">) {
+  const events = read<ActivityEvent[]>(ACTIVITY_KEY, []);
+  events.unshift({
+    ...ev,
+    id: `act_${Date.now().toString(36)}_${randomHex(4)}`,
+    at: new Date().toISOString(),
+  });
+  write(ACTIVITY_KEY, events.slice(0, 200));
+}
+
+export function getActivity(): ActivityEvent[] {
+  return read<ActivityEvent[]>(ACTIVITY_KEY, []);
 }
 
 export function transferNft(nftId: string, to: string) {
@@ -227,10 +267,21 @@ export interface SharedListing extends Listing {
     name: string;
     description: string;
     symbol: string;
+    collection?: string;
     imageType: string;
     image?: string;
     artSeed?: number;
   };
+}
+
+export interface Offer {
+  id: string;
+  listingId: string;
+  bidder: string;
+  price: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
+  listing?: SharedListing;
 }
 
 const LISTINGS_CACHE_KEY = "frani-mint:listings-cache";
@@ -258,7 +309,8 @@ export function cachedListings(): SharedListing[] {
 export async function listNftForSale(
   nftId: string,
   seller: string,
-  price: string
+  price: string,
+  options?: { expiresAt?: string }
 ): Promise<SharedListing> {
   const nft = getNft(nftId);
   if (!nft) throw new Error("NFT not found");
@@ -273,10 +325,12 @@ export async function listNftForSale(
     price: String(p),
     listedAt: new Date().toISOString(),
     status: "active",
+    expiresAt: options?.expiresAt,
     nft: {
       name: nft.name,
       description: nft.description,
       symbol: nft.symbol,
+      collection: nft.collection,
       imageType: nft.imageType,
       image: nft.image,
       artSeed: nft.artSeed,
@@ -292,7 +346,69 @@ export async function listNftForSale(
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Could not create listing");
   }
+  logActivity({
+    type: "list",
+    title: `Listed ${nft.name}`,
+    detail: `${listing.price} UCT`,
+    meta: { listingId: listing.id },
+  });
   return listing;
+}
+
+export function isListingExpired(listing: SharedListing, now = Date.now()): boolean {
+  return !!listing.expiresAt && new Date(listing.expiresAt).getTime() <= now;
+}
+
+/* ------------------------------ offers ------------------------------ */
+
+export async function makeOffer(listingId: string, bidder: string, price: string): Promise<Offer> {
+  const p = Number(price);
+  if (!Number.isFinite(p) || p <= 0) throw new Error("Offer must be a positive number");
+  const res = await fetch("/api/offers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ listingId, bidder, price: String(p) }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not place offer");
+  }
+  const offer = (await res.json()).offer as Offer;
+  logActivity({
+    type: "offer",
+    title: `Offered ${offer.price} UCT`,
+    detail: `on listing ${listingId.slice(0, 8)}…`,
+    meta: { listingId, offerId: offer.id },
+  });
+  return offer;
+}
+
+export async function fetchOffers(params?: { listingId?: string; seller?: string }): Promise<Offer[]> {
+  const q = new URLSearchParams();
+  if (params?.listingId) q.set("listing", params.listingId);
+  if (params?.seller) q.set("seller", params.seller);
+  const res = await fetch(`/api/offers?${q.toString()}`, { cache: "no-store" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not load offers");
+  }
+  return (await res.json()).offers ?? [];
+}
+
+export async function respondToOffer(
+  offerId: string,
+  action: "accept" | "reject",
+  by: string
+): Promise<void> {
+  const res = await fetch(`/api/offers/${encodeURIComponent(offerId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, by }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not update offer");
+  }
 }
 
 export async function cancelListing(listingId: string, by: string) {
@@ -307,11 +423,11 @@ export async function cancelListing(listingId: string, by: string) {
   }
 }
 
-export async function completeSale(listingId: string, buyer: string) {
+export async function completeSale(listingId: string, buyer: string, soldPrice?: string) {
   const res = await fetch(`/api/listings/${encodeURIComponent(listingId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ buyer }),
+    body: JSON.stringify({ buyer, soldPrice }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -324,7 +440,11 @@ export async function completeSale(listingId: string, buyer: string) {
  * the seller's address; with a guest wallet it simulates the exchange. The
  * sale is then recorded in the shared marketplace.
  */
-export async function buyNft(listingId: string, wallet: Wallet): Promise<SharedListing> {
+export async function buyNft(
+  listingId: string,
+  wallet: Wallet,
+  priceOverride?: string
+): Promise<SharedListing> {
   const listings = await fetchListings();
   const listing = listings.find((l) => l.id === listingId);
   if (!listing) throw new Error("Listing not found");
@@ -337,7 +457,7 @@ export async function buyNft(listingId: string, wallet: Wallet): Promise<SharedL
     throw new Error("Your wallet is offline — balance unavailable. Please try again later.");
   }
 
-  const price = BigInt(listing.price);
+  const price = BigInt(priceOverride ?? listing.price);
   const balance = BigInt(wallet.uctBalance ?? "0");
   if (balance < price) {
     throw new Error(
@@ -345,9 +465,10 @@ export async function buyNft(listingId: string, wallet: Wallet): Promise<SharedL
     );
   }
 
+  const priceStr = price.toString();
   if (wallet.kind === "unicity") {
     // Real transfer to the seller's DIRECT address.
-    await sendUct(listing.seller, listing.price, `Frani Mint: ${listing.nft.name}`);
+    await sendUct(listing.seller, priceStr, `Frani Mint: ${listing.nft.name}`);
     const fresh = await refreshBalance(wallet);
     wallet.uctBalance = fresh.uctBalance;
   } else {
@@ -355,13 +476,26 @@ export async function buyNft(listingId: string, wallet: Wallet): Promise<SharedL
   }
 
   // Record the sale in the shared marketplace.
-  await completeSale(listingId, wallet.address);
+  await completeSale(listingId, wallet.address, priceStr);
 
   // Local NFT ownership transfer (preview store).
   transferNft(listing.nftId, wallet.address);
   write(WALLET_KEY, wallet);
 
-  return { ...listing, status: "sold", buyer: wallet.address, soldAt: new Date().toISOString() };
+  logActivity({
+    type: "purchase",
+    title: `Bought ${listing.nft.name}`,
+    detail: `${priceStr} UCT`,
+    meta: { listingId, nftId: listing.nftId },
+  });
+
+  return {
+    ...listing,
+    status: "sold",
+    buyer: wallet.address,
+    soldAt: new Date().toISOString(),
+    soldPrice: priceStr,
+  };
 }
 
 /** Downscale an uploaded image to a max dimension and return a data URL. */

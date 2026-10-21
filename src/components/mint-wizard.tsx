@@ -31,6 +31,8 @@ export function MintWizard({ owner, onMinted }: { owner: string; onMinted: (nft:
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [collection, setCollection] = useState("");
+  const [count, setCount] = useState(1);
   const [imageType, setImageType] = useState<"generative" | "upload" | "ai">("generative");
   const [image, setImage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -103,19 +105,25 @@ export function MintWizard({ owner, onMinted }: { owner: string; onMinted: (nft:
     }, 90);
     setTimeout(() => {
       clearInterval(timer);
-      const nft = mintNft({
-        name: name.trim(),
-        description: description.trim(),
-        symbol: symbol.trim() || "UCT-NFT",
-        owner,
-        imageType,
-        image: imageType !== "generative" && image ? image : undefined,
-      });
-      setMinted(nft);
+      const copies = Math.min(25, Math.max(1, count));
+      const mintedNfts: Nft[] = [];
+      for (let i = 0; i < copies; i++) {
+        const nft = mintNft({
+          name: copies > 1 ? `${name.trim()} #${i + 1}` : name.trim(),
+          description: description.trim(),
+          symbol: symbol.trim() || "UCT-NFT",
+          collection: collection.trim() || undefined,
+          owner,
+          imageType,
+          image: imageType !== "generative" && image ? image : undefined,
+        });
+        mintedNfts.push(nft);
+        onMinted(nft);
+      }
+      setMinted(mintedNfts[0]);
       setMinting(false);
       setProgress(100);
-      onMinted(nft);
-      toast.success("Minted — your NFT is on-chain");
+      toast.success(copies > 1 ? `Minted ${copies} NFTs` : "Minted — your NFT is on-chain");
     }, 1200);
   }
 
@@ -207,6 +215,29 @@ export function MintWizard({ owner, onMinted }: { owner: string; onMinted: (nft:
               onChange={(e) => setSymbol(e.target.value)}
               maxLength={12}
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="nft-collection">Collection</Label>
+              <Input
+                id="nft-collection"
+                placeholder={symbol.trim() || "UCT-NFT"}
+                value={collection}
+                onChange={(e) => setCollection(e.target.value)}
+                maxLength={40}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nft-count">Copies</Label>
+              <Input
+                id="nft-count"
+                type="number"
+                min={1}
+                max={25}
+                value={count}
+                onChange={(e) => setCount(Math.max(1, Math.min(25, Number(e.target.value) || 1)))}
+              />
+            </div>
           </div>
         </div>
       ) : null}

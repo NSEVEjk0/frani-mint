@@ -42,6 +42,7 @@ const NAV = [
   { href: "/", label: "Home" },
   { href: "/studio", label: "Studio" },
   { href: "/market", label: "Marketplace" },
+  { href: "/history", label: "History" },
 ];
 
 export function Header() {

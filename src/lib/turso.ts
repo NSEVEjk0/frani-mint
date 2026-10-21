@@ -28,12 +28,25 @@ export async function ensureListingsTable() {
       status TEXT NOT NULL DEFAULT 'active',
       buyer TEXT,
       sold_at TEXT,
+      sold_price TEXT,
+      expires_at TEXT,
       nft_name TEXT NOT NULL,
       nft_description TEXT NOT NULL DEFAULT '',
       nft_symbol TEXT NOT NULL DEFAULT '',
+      nft_collection TEXT,
       nft_image_type TEXT NOT NULL DEFAULT 'generative',
       nft_image TEXT,
       nft_art_seed INTEGER
+    )
+  `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS mint_offers (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL,
+      bidder TEXT NOT NULL,
+      price TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL
     )
   `);
   await db.close();
@@ -48,14 +61,26 @@ export interface ListingRow {
   status: "active" | "sold" | "cancelled";
   buyer: string | null;
   soldAt: string | null;
+  soldPrice: string | null;
+  expiresAt: string | null;
   nft: {
     name: string;
     description: string;
     symbol: string;
+    collection?: string;
     imageType: string;
     image?: string;
     artSeed?: number;
   };
+}
+
+export interface OfferRow {
+  id: string;
+  listingId: string;
+  bidder: string;
+  price: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
 }
 
 function rowToListing(r: Record<string, unknown>): ListingRow {
@@ -68,14 +93,28 @@ function rowToListing(r: Record<string, unknown>): ListingRow {
     status: String(r.status) as ListingRow["status"],
     buyer: r.buyer ? String(r.buyer) : null,
     soldAt: r.sold_at ? String(r.sold_at) : null,
+    soldPrice: r.sold_price ? String(r.sold_price) : null,
+    expiresAt: r.expires_at ? String(r.expires_at) : null,
     nft: {
       name: String(r.nft_name),
       description: String(r.nft_description ?? ""),
       symbol: String(r.nft_symbol ?? ""),
+      collection: r.nft_collection ? String(r.nft_collection) : undefined,
       imageType: String(r.nft_image_type ?? "generative"),
       image: r.nft_image ? String(r.nft_image) : undefined,
       artSeed: r.nft_art_seed != null ? Number(r.nft_art_seed) : undefined,
     },
+  };
+}
+
+function rowToOffer(r: Record<string, unknown>): OfferRow {
+  return {
+    id: String(r.id),
+    listingId: String(r.listing_id),
+    bidder: String(r.bidder),
+    price: String(r.price),
+    status: String(r.status) as OfferRow["status"],
+    createdAt: String(r.created_at),
   };
 }
 
@@ -85,10 +124,12 @@ export async function createListing(entry: {
   seller: string;
   price: string;
   listedAt: string;
+  expiresAt?: string;
   nft: {
     name: string;
     description: string;
     symbol: string;
+    collection?: string;
     imageType: string;
     image?: string;
     artSeed?: number;
@@ -97,17 +138,19 @@ export async function createListing(entry: {
   const db = client();
   await db.execute({
     sql: `INSERT INTO mint_listings
-      (id, nft_id, seller, price, listed_at, status, nft_name, nft_description, nft_symbol, nft_image_type, nft_image, nft_art_seed)
-      VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
+      (id, nft_id, seller, price, listed_at, status, expires_at, nft_name, nft_description, nft_symbol, nft_collection, nft_image_type, nft_image, nft_art_seed)
+      VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       entry.id,
       entry.nftId,
       entry.seller,
       entry.price,
       entry.listedAt,
+      entry.expiresAt ?? null,
       entry.nft.name,
       entry.nft.description,
       entry.nft.symbol,
+      entry.nft.collection ?? null,
       entry.nft.imageType,
       entry.nft.image ?? null,
       entry.nft.artSeed ?? null,
@@ -142,7 +185,7 @@ export async function cancelListing(id: string, by: string) {
   await db.close();
 }
 
-export async function markSold(id: string, buyer: string) {
+export async function markSold(id: string, buyer: string, soldPrice?: string) {
   const db = client();
   const existing = await db.execute({ sql: "SELECT * FROM mint_listings WHERE id = ?", args: [id] });
   const row = existing.rows[0] as unknown as Record<string, unknown> | undefined;
@@ -150,8 +193,70 @@ export async function markSold(id: string, buyer: string) {
   if (String(row.status) !== "active") throw new Error("Listing is not active");
   if (String(row.seller) === buyer) throw new Error("You can't buy your own listing");
   await db.execute({
-    sql: "UPDATE mint_listings SET status = 'sold', buyer = ?, sold_at = ? WHERE id = ?",
-    args: [buyer, new Date().toISOString(), id],
+    sql: "UPDATE mint_listings SET status = 'sold', buyer = ?, sold_at = ?, sold_price = ? WHERE id = ?",
+    args: [buyer, new Date().toISOString(), soldPrice ?? null, id],
+  });
+  await db.close();
+}
+
+/* ------------------------------ offers ------------------------------ */
+
+export async function createOffer(entry: {
+  id: string;
+  listingId: string;
+  bidder: string;
+  price: string;
+}) {
+  const db = client();
+  const existing = await db.execute({
+    sql: "SELECT * FROM mint_listings WHERE id = ?",
+    args: [entry.listingId],
+  });
+  const row = existing.rows[0] as unknown as Record<string, unknown> | undefined;
+  if (!row) throw new Error("Listing not found");
+  if (String(row.status) !== "active") throw new Error("Listing is not active");
+  if (String(row.seller) === entry.bidder) throw new Error("You can't offer on your own listing");
+  await db.execute({
+    sql: "INSERT INTO mint_offers (id, listing_id, bidder, price, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+    args: [entry.id, entry.listingId, entry.bidder, entry.price, new Date().toISOString()],
+  });
+  await db.close();
+}
+
+export async function listOffers(params?: { listingId?: string; seller?: string }): Promise<OfferRow[]> {
+  const db = client();
+  let sql = "SELECT * FROM mint_offers WHERE 1=1";
+  const args: (string | number | bigint | null | Uint8Array)[] = [];
+  if (params?.listingId) {
+    sql += " AND listing_id = ?";
+    args.push(params.listingId);
+  }
+  if (params?.seller) {
+    sql += " AND listing_id IN (SELECT id FROM mint_listings WHERE seller = ?)";
+    args.push(params.seller);
+  }
+  sql += " ORDER BY created_at DESC";
+  const res = await db.execute({ sql, args });
+  await db.close();
+  return res.rows.map((r) => rowToOffer(r as unknown as Record<string, unknown>));
+}
+
+export async function updateOfferStatus(id: string, status: "accepted" | "rejected", by: string) {
+  const db = client();
+  const existing = await db.execute({ sql: "SELECT * FROM mint_offers WHERE id = ?", args: [id] });
+  const row = existing.rows[0] as unknown as Record<string, unknown> | undefined;
+  if (!row) throw new Error("Offer not found");
+  if (String(row.status) !== "pending") throw new Error("Offer is no longer pending");
+  // Only the listing seller may accept/reject.
+  const listing = await db.execute({
+    sql: "SELECT * FROM mint_listings WHERE id = ?",
+    args: [String(row.listing_id)],
+  });
+  const lrow = listing.rows[0] as unknown as Record<string, unknown> | undefined;
+  if (!lrow || String(lrow.seller) !== by) throw new Error("Only the seller can respond to offers");
+  await db.execute({
+    sql: "UPDATE mint_offers SET status = ? WHERE id = ?",
+    args: [status, id],
   });
   await db.close();
 }

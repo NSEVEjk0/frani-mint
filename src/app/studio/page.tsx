@@ -27,7 +27,10 @@ import {
   listNftForSale,
   cancelListing,
   fetchListings,
+  fetchOffers,
+  respondToOffer,
   type Nft,
+  type Offer,
   type SharedListing,
   type Wallet,
 } from "@/lib/wallet";
@@ -38,6 +41,7 @@ export default function StudioPage() {
   const [mintOpen, setMintOpen] = useState(false);
   const [listingNft, setListingNft] = useState<Nft | null>(null);
   const [price, setPrice] = useState("");
+  const [duration, setDuration] = useState("never");
   const [detailNft, setDetailNft] = useState<Nft | null>(null);
 
   useEffect(() => {
@@ -58,10 +62,16 @@ export default function StudioPage() {
   async function handleList() {
     if (!wallet || !listingNft) return;
     try {
-      await listNftForSale(listingNft.id, wallet.address, price);
+      let expiresAt: string | undefined;
+      if (duration !== "never") {
+        const days = Number(duration);
+        expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
+      }
+      await listNftForSale(listingNft.id, wallet.address, price, { expiresAt });
       toast.success("Listed for sale in the marketplace");
       setListingNft(null);
       setPrice("");
+      setDuration("never");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not list");
     }
@@ -185,6 +195,32 @@ export default function StudioPage() {
                 autoFocus
               />
             </div>
+            <div className="space-y-2">
+              <Label>Listing duration</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["never", "Until sold"],
+                  ["1", "1 day"],
+                  ["3", "3 days"],
+                  ["7", "7 days"],
+                  ["30", "30 days"],
+                ].map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setDuration(val)}
+                    className={
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
+                      (duration === val
+                        ? "border-primary/60 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/30")
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setListingNft(null)}>
                 Cancel
@@ -202,15 +238,20 @@ export default function StudioPage() {
 
 function MyListings({ wallet }: { wallet: Wallet }) {
   const [listings, setListings] = useState<SharedListing[]>([]);
+  const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyOffer, setBusyOffer] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const all = await fetchListings();
       setListings(all.filter((l) => l.seller.toLowerCase() === wallet.address.toLowerCase()));
+      const myOffers = await fetchOffers({ seller: wallet.address });
+      setOffers(myOffers);
     } catch {
       setListings([]);
+      setOffers([]);
     } finally {
       setLoading(false);
     }
@@ -230,6 +271,27 @@ function MyListings({ wallet }: { wallet: Wallet }) {
     }
   }
 
+  async function handleOfferResponse(offerId: string, action: "accept" | "reject") {
+    setBusyOffer(offerId);
+    try {
+      await respondToOffer(offerId, action, wallet.address);
+      toast.success(action === "accept" ? "Offer accepted — sale completed" : "Offer declined");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update offer");
+    } finally {
+      setBusyOffer(null);
+    }
+  }
+
+  function expiryLabel(l: SharedListing) {
+    if (!l.expiresAt) return "no expiry";
+    const ms = new Date(l.expiresAt).getTime() - Date.now();
+    if (ms <= 0) return "expired";
+    const h = Math.floor(ms / 3_600_000);
+    return h < 48 ? `${h}h left` : `${Math.floor(h / 24)}d left`;
+  }
+
   if (listings.length === 0) {
     return (
       <EmptyState
@@ -242,32 +304,71 @@ function MyListings({ wallet }: { wallet: Wallet }) {
 
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {listings.map((listing) => (
-        <div key={listing.id} className="overflow-hidden rounded-xl border bg-card">
-          <div className="aspect-square overflow-hidden">
-            <NftMedia nft={{ id: listing.nftId, name: listing.nft.name, description: listing.nft.description, symbol: listing.nft.symbol, imageType: listing.nft.imageType as "generative" | "upload" | "ai", image: listing.nft.image, artSeed: listing.nft.artSeed, mintedAt: "", owner: "", txRef: "" }} />
-          </div>
-          <div className="flex items-center justify-between p-4">
-            <div>
-              <p className="text-sm font-medium">{listing.nft.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {listing.status === "active" ? (
-                  <>Listed for <span className="font-mono text-foreground">{listing.price} UCT</span></>
-                ) : listing.status === "sold" ? (
-                  <>Sold to <span className="font-mono">{listing.buyer?.slice(0, 8)}…</span></>
-                ) : (
-                  "Cancelled"
-                )}
-              </p>
+      {listings.map((listing) => {
+        const listingOffers = offers.filter((o) => o.listingId === listing.id);
+        return (
+          <div key={listing.id} className="overflow-hidden rounded-xl border bg-card">
+            <div className="aspect-square overflow-hidden">
+              <NftMedia nft={{ id: listing.nftId, name: listing.nft.name, description: listing.nft.description, symbol: listing.nft.symbol, imageType: listing.nft.imageType as "generative" | "upload" | "ai", image: listing.nft.image, artSeed: listing.nft.artSeed, mintedAt: "", owner: "", txRef: "" }} />
             </div>
-            {listing.status === "active" ? (
-              <Button variant="ghost" size="sm" onClick={() => handleCancel(listing.id)}>
-                Cancel
-              </Button>
-            ) : null}
+            <div className="p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{listing.nft.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {listing.status === "active" ? (
+                      <>Listed for <span className="font-mono text-foreground">{listing.price} UCT</span> · {expiryLabel(listing)}</>
+                    ) : listing.status === "sold" ? (
+                      <>Sold to <span className="font-mono">{listing.buyer?.slice(0, 8)}…</span> for <span className="font-mono">{listing.soldPrice || listing.price} UCT</span></>
+                    ) : (
+                      "Cancelled"
+                    )}
+                  </p>
+                </div>
+                {listing.status === "active" ? (
+                  <Button variant="ghost" size="sm" onClick={() => handleCancel(listing.id)}>
+                    Cancel
+                  </Button>
+                ) : null}
+              </div>
+
+              {listingOffers.length > 0 ? (
+                <div className="mt-3 space-y-2 border-t border-border pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Offers ({listingOffers.length})
+                  </p>
+                  {listingOffers.map((offer) => (
+                    <div key={offer.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2">
+                      <div>
+                        <p className="text-sm">
+                          <span className="font-mono font-medium">{offer.price} UCT</span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          from <span className="font-mono">{offer.bidder.slice(0, 8)}…</span> · {new Date(offer.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      {offer.status === "pending" ? (
+                        <div className="flex gap-1.5">
+                          <Button size="sm" variant="outline" disabled={busyOffer === offer.id} onClick={() => handleOfferResponse(offer.id, "reject")}>
+                            Decline
+                          </Button>
+                          <Button size="sm" disabled={busyOffer === offer.id} onClick={() => handleOfferResponse(offer.id, "accept")}>
+                            {busyOffer === offer.id ? "…" : "Accept"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className={"text-[11px] font-medium " + (offer.status === "accepted" ? "text-emerald-400" : "text-muted-foreground")}>
+                          {offer.status === "accepted" ? "accepted" : "declined"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

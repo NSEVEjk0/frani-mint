@@ -20,10 +20,12 @@ export async function POST(req: NextRequest) {
     nftId?: string;
     seller?: string;
     price?: string;
+    expiresAt?: string;
     nft?: {
       name?: string;
       description?: string;
       symbol?: string;
+      collection?: string;
       imageType?: string;
       image?: string;
       artSeed?: number;
@@ -51,10 +53,12 @@ export async function POST(req: NextRequest) {
       seller: body.seller,
       price: String(price),
       listedAt: new Date().toISOString(),
+      expiresAt: body.expiresAt,
       nft: {
         name: body.nft.name,
         description: body.nft.description ?? "",
         symbol: body.nft.symbol ?? "",
+        collection: body.nft.collection,
         imageType: body.nft.imageType ?? "generative",
         image: body.nft.image,
         artSeed: body.nft.artSeed,
